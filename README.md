@@ -4,9 +4,10 @@ Aether is a Windows 11-inspired desktop **simulator** built with Electron. It op
 
 ## Use the web CAD converter
 
-The hosted SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 50 `.SLDPRT`
-files (128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded.
-The public page is [harhen12347.github.io/vm](https://harhen12347.github.io/vm/).
+The SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 50 `.SLDPRT` files
+(128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. Once
+GitHub Pages is enabled for this repository, the public page will be
+[harhen12347.github.io/vm](https://harhen12347.github.io/vm/).
 
 To build the static page locally:
 
