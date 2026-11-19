@@ -15,7 +15,8 @@ npm install
 npm run build:web
 ```
 
-GitHub Pages deploys the static site from the `main` branch using the workflow in `.github/workflows/pages.yml`.
+GitHub Pages deploys the static site from the `main` branch using the workflow in `.github/workflows/pages.yml`;
+each push to `main` publishes an update.
 To preview the full desktop simulator in a browser, start its optional local server with `npm run serve`.
 
 The Electron native desktop build provides integrated Chromium tabs:
