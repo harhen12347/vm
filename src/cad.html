@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101522">
+  <meta name="description" content="Convert SolidWorks SLDPRT files to STL in your browser.">
+  <title>SLDPRT to STL Converter</title>
+  <link rel="stylesheet" href="./cad.css">
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="SLDPRT to STL Converter home">
+        <span class="brand-mark" aria-hidden="true">◈</span>
+        <span>Part to Mesh</span>
+      </a>
+    </header>
+
+    <section class="converter" aria-labelledby="page-title">
+      <div class="eyebrow"><span aria-hidden="true">✦</span> CAD FILE CONVERTER</div>
+      <h1 id="page-title">SLDPRT to STL</h1>
+      <p class="intro">Convert SolidWorks part files into downloadable STL meshes.</p>
+
+      <label class="dropzone" id="dropzone">
+        <input id="file-input" type="file" accept=".sldprt" multiple>
+        <span class="upload-icon" aria-hidden="true">↑</span>
+        <span class="drop-title">Drop your part files here</span>
+        <span class="drop-caption">or <span class="browse">browse files</span></span>
+        <span class="limits">Up to 50 files · 128 MB per file</span>
+      </label>
+
+      <div class="actions">
+        <button id="convert-button" type="button" disabled>Convert to STL</button>
+        <span id="progress" role="status" aria-live="polite">Choose one or more .SLDPRT files.</span>
+      </div>
+
+      <section id="results" class="results" aria-label="Conversion results">
+        <p class="empty">Your selected files and downloads will appear here.</p>
+      </section>
+
+      <p class="privacy">
+        Your files are converted locally in your browser and never uploaded. Some unsupported or damaged
+        parts may not convert.
+      </p>
+    </section>
+  </main>
+  <script src="./cad-page.js" defer></script>
+</body>
+</html>

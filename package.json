@@ -9,10 +9,14 @@
     "start": "electron .",
     "dev": "electron .",
     "serve": "node server.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js",
+    "build:web": "node scripts/build-web.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --check scripts/build-web.js",
     "test": "node --test"
   },
   "devDependencies": {
     "electron": "^45.4.1"
+  },
+  "dependencies": {
+    "sldprt": "https://codeload.github.com/blussyya/solidworks-converters/tar.gz/b0568c01ae28ccfe9ac90f5bdf4a580a36b2a51d"
   }
 }

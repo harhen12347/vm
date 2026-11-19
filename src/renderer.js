@@ -1,6 +1,7 @@
 const apps = [
   { id: 'files', name: 'File Explorer', icon: '▰', cls: 'files', width: 820, height: 535 },
   { id: 'browser', name: 'Aether Browser', icon: '◉', cls: 'browser', width: 1040, height: 680 },
+  { id: 'cad', name: 'CAD Converter', icon: '◈', cls: 'converter', width: 760, height: 590 },
   { id: 'calculator', name: 'Calculator', icon: '▦', cls: 'calc', width: 360, height: 485 },
   { id: 'notepad', name: 'Notepad', icon: '▤', cls: 'notes', width: 650, height: 490 },
   { id: 'terminal', name: 'Terminal', icon: '>_', cls: 'terminal', width: 700, height: 440 },
@@ -32,6 +33,20 @@ if (!window.aether) {
       mkdir: (folderPath) => post('/api/files/mkdir', { path: folderPath }),
       rename: async (filePath, name) => (await post('/api/files/rename', { path: filePath, name })).path,
       delete: (filePath) => post('/api/files/delete', { path: filePath })
+    },
+    cad: {
+      convertSldprtToStl: async (input) => {
+        const response = await fetch('/api/cad/sldprt-to-stl', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: input
+        });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || `Conversion failed (${response.status}).`);
+        }
+        return response.blob();
+      }
     },
     system: { info: () => request('/api/system') }
   };
@@ -69,7 +84,7 @@ function updateClock() {
 }
 
 function buildShortcuts() {
-  const shortcutApps = ['files', 'browser', 'calculator', 'notepad', 'terminal', 'settings', 'paint', 'manager', 'store'];
+  const shortcutApps = ['files', 'browser', 'cad', 'calculator', 'notepad', 'terminal', 'settings', 'paint', 'manager', 'store'];
   $('#desktop-shortcuts').innerHTML = shortcutApps.map((id) => {
     const app = apps.find((item) => item.id === id);
     return `<button class="desktop-shortcut" data-launch="${app.id}">${appIcon(app)}<span>${app.name}</span></button>`;
@@ -174,6 +189,7 @@ async function closeWindow(id) {
   if (instance.app.id === 'browser') {
     $$('.browser-tab', instance.content).forEach((tab) => tab.webview?.remove());
   }
+  if (instance.cleanup) instance.cleanup();
   instance.element.remove();
   $(`[data-running-window="${id}"]`)?.remove();
   windows.delete(id);
@@ -246,7 +262,7 @@ function launchApp(id, options = {}) {
   if (!app) return;
   const win = makeWindow(app, options);
   const renderers = {
-    files: renderFiles, browser: renderBrowser, calculator: renderCalculator,
+    files: renderFiles, browser: renderBrowser, cad: renderCadConverter, calculator: renderCalculator,
     notepad: renderNotepad, terminal: renderTerminal, settings: renderSettings,
     paint: renderPaint, manager: renderTaskManager, store: renderStore
   };
@@ -704,6 +720,126 @@ function renderBrowser(win) {
   });
   createTab('', true);
   $('[data-browser-empty]', win.content).style.display = 'grid';
+}
+
+function renderCadConverter(win) {
+  const maxFileSize = 128 * 1024 * 1024;
+  const maxFiles = 50;
+  win.state = { files: [], urls: new Set(), busy: false, closed: false };
+  win.content.innerHTML = `
+    <div class="cad-converter">
+      <div class="cad-heading">
+        <h2>SLDPRT to STL</h2>
+        <p>Convert SolidWorks part files locally. Your CAD files are not uploaded to a third-party service.</p>
+      </div>
+      <label class="cad-dropzone" data-cad-dropzone>
+        <input data-cad-input type="file" accept=".sldprt,.SLDPRT" multiple>
+        <span class="cad-drop-icon">⇧</span>
+        <b>Drop SLDPRT files here or browse</b>
+        <small>Up to ${maxFiles} files · ${maxFileSize / 1024 / 1024} MB per file</small>
+      </label>
+      <div class="cad-actions">
+        <button class="primary-button" data-cad-convert disabled>Convert selected</button>
+        <span data-cad-progress aria-live="polite">Choose one or more part files.</span>
+      </div>
+      <div class="cad-results" data-cad-results><div class="empty-folder">Converted STL files will appear here.</div></div>
+      <p class="cad-note">STL is generated from the mesh saved in the part when available. Some unusual or damaged files may not convert.</p>
+    </div>`;
+
+  const input = $('[data-cad-input]', win.content);
+  const dropzone = $('[data-cad-dropzone]', win.content);
+  const convertButton = $('[data-cad-convert]', win.content);
+  const progress = $('[data-cad-progress]', win.content);
+  const results = $('[data-cad-results]', win.content);
+
+  const clearUrls = () => {
+    for (const url of win.state.urls) URL.revokeObjectURL(url);
+    win.state.urls.clear();
+  };
+  win.cleanup = () => {
+    win.state.closed = true;
+    clearUrls();
+  };
+
+  const setFiles = (fileList) => {
+    if (win.state.busy) return;
+    clearUrls();
+    const files = Array.from(fileList);
+    const valid = files.filter((file) => /\.sldprt$/i.test(file.name));
+    const rejectedCount = files.length - valid.length;
+    if (rejectedCount) showToast(`${rejectedCount} file${rejectedCount === 1 ? '' : 's'} skipped; choose .SLDPRT files.`, true);
+    if (valid.length > maxFiles) showToast(`Only the first ${maxFiles} files will be converted.`, true);
+    win.state.files = valid.slice(0, maxFiles);
+    convertButton.disabled = win.state.files.length === 0;
+    progress.textContent = win.state.files.length
+      ? `${win.state.files.length} file${win.state.files.length === 1 ? '' : 's'} selected.`
+      : 'Choose one or more part files.';
+    results.innerHTML = win.state.files.length ? win.state.files.map((file, index) => `
+      <div class="cad-result" data-cad-row="${index}">
+        <span class="cad-result-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+        <span class="cad-result-status" data-cad-status>Ready to convert</span>
+        <a class="cad-download hidden" data-cad-download>Download STL</a>
+      </div>`).join('') : '<div class="empty-folder">Converted STL files will appear here.</div>';
+  };
+
+  input.addEventListener('change', () => setFiles(input.files));
+  dropzone.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    dropzone.classList.add('dragging');
+  });
+  dropzone.addEventListener('dragleave', (event) => {
+    if (!dropzone.contains(event.relatedTarget)) dropzone.classList.remove('dragging');
+  });
+  dropzone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    dropzone.classList.remove('dragging');
+    setFiles(event.dataTransfer.files);
+  });
+
+  convertButton.addEventListener('click', async () => {
+    if (win.state.busy || !win.state.files.length) return;
+    if (!window.aether.cad?.convertSldprtToStl) {
+      showToast('CAD conversion is unavailable. Restart the app after installing dependencies.', true);
+      return;
+    }
+
+    win.state.busy = true;
+    convertButton.disabled = true;
+    input.disabled = true;
+    let convertedCount = 0;
+    const files = [...win.state.files];
+    for (const [index, file] of files.entries()) {
+      const row = $(`[data-cad-row="${index}"]`, results);
+      const status = $('[data-cad-status]', row);
+      status.textContent = `Converting ${index + 1} of ${files.length}…`;
+      progress.textContent = `Converting ${index + 1} of ${files.length}: ${file.name}`;
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const output = await window.aether.cad.convertSldprtToStl(bytes);
+        const blob = output instanceof Blob ? output : new Blob([output], { type: 'model/stl' });
+        const url = URL.createObjectURL(blob);
+        if (win.state.closed) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        win.state.urls.add(url);
+        const download = $('[data-cad-download]', row);
+        download.href = url;
+        download.download = `${file.name.replace(/\.sldprt$/i, '') || 'model'}.stl`;
+        download.classList.remove('hidden');
+        status.textContent = `Ready · ${blob.size.toLocaleString()} bytes`;
+        status.classList.remove('error');
+        convertedCount++;
+      } catch (error) {
+        status.textContent = `Failed: ${error.message}`;
+        status.classList.add('error');
+      }
+    }
+    win.state.busy = false;
+    input.disabled = false;
+    convertButton.disabled = files.length === 0;
+    progress.textContent = `Finished: ${convertedCount} of ${files.length} converted. Download each STL below.`;
+  });
 }
 
 function renderTerminal(win) {

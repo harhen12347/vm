@@ -12,5 +12,8 @@ contextBridge.exposeInMainWorld('aether', {
   system: {
     info: () => ipcRenderer.invoke('system:info'),
     quit: () => ipcRenderer.invoke('system:quit')
+  },
+  cad: {
+    convertSldprtToStl: (input) => ipcRenderer.invoke('cad:convert-sldprt', input)
   }
 });

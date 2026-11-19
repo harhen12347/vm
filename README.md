@@ -2,18 +2,23 @@
 
 Aether is a Windows 11-inspired desktop **simulator** built with Electron. It opens as a native desktop app and uses Electron's real Chromium engine for web browsing, but it does not boot or emulate a separate operating system.
 
-## Run it in a browser
+## Use the web CAD converter
 
-Requirements: Node.js 20.0.0 or later and npm. Start the web version with:
+The hosted SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 50 `.SLDPRT`
+files (128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded.
+The public page is [harhen12347.github.io/vm](https://harhen12347.github.io/vm/).
+
+To build the static page locally:
 
 ```bash
 npm install
-npm run serve
+npm run build:web
 ```
 
-Open `http://localhost:3000`. Set `PORT=8080 npm run serve` to choose another port. Virtual files are saved in `~/.aether-desktop/aether-files.json` and persist between server restarts.
+GitHub Pages deploys the static site from the `main` branch using the workflow in `.github/workflows/pages.yml`.
+To preview the full desktop simulator in a browser, start its optional local server with `npm run serve`.
 
-The web version displays websites inside Aether Browser. Some sites block embedded pages; use the browser's ↗ button to open those pages in a regular browser. Electron is the optional native desktop build and provides integrated Chromium tabs:
+The Electron native desktop build provides integrated Chromium tabs:
 
 ```bash
 npm start
@@ -28,6 +33,7 @@ On Linux, Electron may need the system libraries listed in [Electron's Linux pre
 - Boot and sign-in screens, a desktop, Start menu, taskbar, clock, notification panel, power menu, and draggable/minimizable/maximizable app windows.
 - File Explorer and Notepad backed by a persistent virtual filesystem. Files are stored in Electron's per-user app-data folder as `aether-files.json`, not in the host filesystem. Desktop, Documents, Downloads, and Pictures are created on first launch.
 - Calculator, a drawing canvas that saves and opens PNGs in the virtual Pictures folder, Personalization/System settings, Task Manager, and an App Store catalog of the bundled apps.
+- A local CAD Converter that batch-converts up to 50 `.SLDPRT` files to binary STL, with per-file downloads. Files are limited to 128 MB each and are processed on the app host, not uploaded to a third-party service. Conversion uses the [Apache-2.0 `sldprt` project](https://github.com/blussyya/solidworks-converters) and may fail for unsupported or damaged parts.
 - A Chromium webview with Google Search, HTTP(S) browsing, navigation controls, and multiple tabs in the Electron build. In the web version, pages open in sandboxed browser tabs inside the desktop; sites that prohibit embedding can be opened in a regular browser with the ↗ button. Internet access requires a network connection.
 - Terminal commands for navigating and managing the virtual filesystem. Its `python` command supports arithmetic expressions, simple assignments, and `print(...)`; it is a deliberately small simulator, **not** a system Python interpreter.
 - CPU and memory figures read from the host operating system. Restart and shutdown affect the simulated desktop session only; they do not restart or power off the computer.

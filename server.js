@@ -4,14 +4,24 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 const { VirtualFileSystem } = require('./src/vfs');
+const { convertSldprtToStl, MAX_CAD_FILE_BYTES } = require('./src/cad-converter');
 
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '0.0.0.0';
 const files = new VirtualFileSystem(path.join(os.homedir(), '.aether-desktop', 'aether-files.json'));
 const staticFiles = new Map([
-  ['/', path.join(__dirname, 'src', 'index.html')],
+  ['/', path.join(__dirname, 'src', 'cad.html')],
+  ['/desktop', path.join(__dirname, 'src', 'index.html')],
   ['/styles.css', path.join(__dirname, 'src', 'styles.css')],
-  ['/renderer.js', path.join(__dirname, 'src', 'renderer.js')]
+  ['/renderer.js', path.join(__dirname, 'src', 'renderer.js')],
+  ['/cad.css', path.join(__dirname, 'src', 'cad.css')],
+  ['/cad-page.js', path.join(__dirname, 'src', 'cad-page.js')],
+  ['/cad-worker.js', path.join(__dirname, 'src', 'cad-worker.js')],
+  ['/vendor/container/modern.js', require.resolve('sldprt/src/container/modern.js')],
+  ['/vendor/container/ole.js', require.resolve('sldprt/src/container/ole.js')],
+  ['/vendor/display.js', require.resolve('sldprt/src/display.js')],
+  ['/vendor/inflate.js', require.resolve('sldprt/src/inflate.js')],
+  ['/vendor/convert.js', require.resolve('sldprt/src/convert.js')]
 ]);
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -42,7 +52,38 @@ async function readJson(request) {
   }
 }
 
+async function readCadFile(request) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > MAX_CAD_FILE_BYTES) {
+      throw Object.assign(new Error(`SLDPRT files must be ${MAX_CAD_FILE_BYTES / 1024 / 1024} MB or smaller.`), {
+        statusCode: 413
+      });
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, size);
+}
+
 async function handleApi(request, response, pathname) {
+  if (pathname === '/api/cad/sldprt-to-stl') {
+    if (request.method !== 'POST') return respondJson(response, 405, { error: 'Method not allowed.' });
+    if ((request.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase() !== 'application/octet-stream') {
+      return respondJson(response, 415, { error: 'Upload an SLDPRT file as application/octet-stream.' });
+    }
+    const stl = await convertSldprtToStl(await readCadFile(request));
+    response.writeHead(200, {
+      'Content-Type': 'model/stl',
+      'Content-Length': stl.length,
+      'Content-Disposition': 'attachment; filename="converted.stl"',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    response.end(stl);
+    return;
+  }
   if (pathname === '/api/health' && request.method === 'GET') {
     return respondJson(response, 200, { status: 'ok', name: 'Aether Desktop' });
   }

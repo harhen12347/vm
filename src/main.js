@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const { VirtualFileSystem } = require('./vfs');
+const { convertSldprtToStl } = require('./cad-converter');
 
 function registerFileSystemHandlers(files) {
   ipcMain.handle('fs:list', (_event, input) => files.list(input));
@@ -10,6 +11,7 @@ function registerFileSystemHandlers(files) {
   ipcMain.handle('fs:mkdir', (_event, input) => files.mkdir(input));
   ipcMain.handle('fs:rename', (_event, input, newName) => files.rename(input, newName));
   ipcMain.handle('fs:delete', (_event, input) => files.delete(input));
+  ipcMain.handle('cad:convert-sldprt', (_event, input) => convertSldprtToStl(input));
 }
 
 function createWindow() {
