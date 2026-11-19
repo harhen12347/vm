@@ -5,19 +5,19 @@ Aether is a Windows 11-inspired desktop **simulator** built with Electron. It op
 ## Use the web CAD converter
 
 The SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 50 `.SLDPRT` files
-(128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. Once
-GitHub Pages is enabled for this repository, the public page will be
+(128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. GitHub Pages
+serves the public page from the repository root:
 [harhen12347.github.io/vm](https://harhen12347.github.io/vm/).
 
-To build the static page locally:
+To update the Pages files after editing the converter:
 
 ```bash
 npm install
-npm run build:web
+npm run publish:web
 ```
 
-GitHub Pages deploys the static site from the `main` branch using the workflow in `.github/workflows/pages.yml`;
-each push to `main` publishes an update.
+Commit and push the generated root files to publish updates. The full Aether desktop simulator remains
+available as an optional local server with `npm run serve`.
 To preview the full desktop simulator in a browser, start its optional local server with `npm run serve`.
 
 The Electron native desktop build provides integrated Chromium tabs:

@@ -22,7 +22,9 @@ for (const [source, destination] of [
   ['container/ole.js', 'vendor/container/ole.js'],
   ['display.js', 'vendor/display.js'],
   ['inflate.js', 'vendor/inflate.js'],
-  ['convert.js', 'vendor/convert.js']
+  ['convert.js', 'vendor/convert.js'],
+  ['../LICENSE', 'vendor/LICENSE'],
+  ['../NOTICE', 'vendor/NOTICE']
 ]) {
   fs.copyFileSync(path.join(library, source), path.join(output, destination));
 }
