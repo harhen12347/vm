@@ -1,5 +1,4 @@
 import * as THREE from './vendor/three/three.module.js';
-import printerDatabase from './printer-database.json' with { type: 'json' };
 import { availableOutputFormats, OUTPUT_FORMATS, profileErrors, profileWarnings, unsupportedGcodeTokens, validateDatabase } from './printer-database.mjs';
 import { AMFLoader } from 'three/addons/loaders/AMFLoader.js';
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
@@ -8,7 +7,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 
-validateDatabase(printerDatabase);
+const printerDatabaseResponse = await fetch('./printer-database.json', { cache: 'no-cache' });
+if (!printerDatabaseResponse.ok) throw new Error(`Unable to load printer database (${printerDatabaseResponse.status}).`);
+const printerDatabase = validateDatabase(await printerDatabaseResponse.json());
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
