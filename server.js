@@ -10,7 +10,12 @@ const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '0.0.0.0';
 const files = new VirtualFileSystem(path.join(os.homedir(), '.aether-desktop', 'aether-files.json'));
 const staticFiles = new Map([
-  ['/', path.join(__dirname, 'src', 'cad.html')],
+  ['/', path.join(__dirname, 'src', 'slicer.html')],
+  ['/slicer.css', path.join(__dirname, 'src', 'slicer.css')],
+  ['/slicer.js', path.join(__dirname, 'src', 'slicer.js')],
+  ['/slicer-worker.js', path.join(__dirname, 'src', 'slicer-worker.js')],
+  ['/cad', path.join(__dirname, 'src', 'cad.html')],
+  ['/vendor/three/three.module.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.js')],
   ['/desktop', path.join(__dirname, 'src', 'index.html')],
   ['/styles.css', path.join(__dirname, 'src', 'styles.css')],
   ['/renderer.js', path.join(__dirname, 'src', 'renderer.js')],

@@ -7,9 +7,14 @@ const library = path.join(root, 'node_modules', 'sldprt', 'src');
 
 fs.rmSync(output, { recursive: true, force: true });
 fs.mkdirSync(path.join(output, 'vendor', 'container'), { recursive: true });
+fs.mkdirSync(path.join(output, 'vendor', 'three'), { recursive: true });
 
 for (const [source, destination] of [
-  ['src/cad.html', 'index.html'],
+  ['src/slicer.html', 'index.html'],
+  ['src/slicer.css', 'slicer.css'],
+  ['src/slicer.js', 'slicer.js'],
+  ['src/slicer-worker.js', 'slicer-worker.js'],
+  ['src/cad.html', 'cad.html'],
   ['src/cad.css', 'cad.css'],
   ['src/cad-page.js', 'cad-page.js'],
   ['src/cad-worker.js', 'cad-worker.js']
@@ -29,4 +34,9 @@ for (const [source, destination] of [
   fs.copyFileSync(path.join(library, source), path.join(output, destination));
 }
 
-console.log(`Built browser CAD converter in ${path.relative(root, output)}/`);
+fs.copyFileSync(
+  path.join(root, 'node_modules', 'three', 'build', 'three.module.js'),
+  path.join(output, 'vendor', 'three', 'three.module.js')
+);
+
+console.log(`Built browser 3D slicer in ${path.relative(root, output)}/`);

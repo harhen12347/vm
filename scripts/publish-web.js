@@ -9,4 +9,4 @@ if (!fs.existsSync(path.join(output, 'index.html'))) {
 }
 
 fs.cpSync(output, root, { recursive: true, force: true });
-console.log('Published static CAD converter files to the repository root.');
+console.log('Published static slicer and CAD converter files to the repository root.');

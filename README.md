@@ -1,12 +1,32 @@
 # Aether Desktop
 
+## Prism 3D slicer
+
+Run the browser slicer with:
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000`. The viewport renders the build plate, printer frame, grid, and selected
+printer's build volume. It imports binary/ASCII STL and OBJ, supports basic object transforms, worker-based
+contour slicing, layer previews, estimates, and generic G-code export. This is an early slicer, not a
+replacement for Cura/FlashPrint: only generic templates are bundled, imported profiles currently provide
+build dimensions/nozzle size, and generated G-code is not printer-validated. Add custom profiles from the
+Printer tab or import/export Prism profile JSON. The SLDPRT converter remains at `/cad` (or `/cad.html`
+on the static site), and the desktop simulator remains at `/desktop`.
+Profile JSON uses `manufacturer`, `name`, `buildVolume` (`x`, `y`, `z` in millimetres), and
+`nozzleDiameter`; import accepts a single profile or an array. This does not import Cura inheritance,
+start/end G-code, or printer-specific file formats. Supports and non-rectangular build plates are not
+implemented yet.
+
 Aether is a Windows 11-inspired desktop **simulator** built with Electron. It opens as a native desktop app and uses Electron's real Chromium engine for web browsing, but it does not boot or emulate a separate operating system.
 
-## Use the web CAD converter
+## Static browser tools
 
 The SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 50 `.SLDPRT` files
 (128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. GitHub Pages
-serves the public page from the repository root:
+serves the slicer from the repository root and the converter at `/cad.html`:
 [harhen12347.github.io/vm](https://harhen12347.github.io/vm/).
 
 To update the Pages files after editing the converter:

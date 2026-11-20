@@ -7,17 +7,18 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "electron .",
+    "dev": "node server.js",
     "serve": "node server.js",
     "build:web": "node scripts/build-web.js",
     "publish:web": "npm run build:web && node scripts/publish-web.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --check scripts/build-web.js && node --check scripts/publish-web.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check scripts/build-web.js && node --check scripts/publish-web.js",
     "test": "node --test"
   },
   "devDependencies": {
     "electron": "^45.4.1"
   },
   "dependencies": {
-    "sldprt": "https://codeload.github.com/blussyya/solidworks-converters/tar.gz/b0568c01ae28ccfe9ac90f5bdf4a580a36b2a51d"
+    "sldprt": "https://codeload.github.com/blussyya/solidworks-converters/tar.gz/b0568c01ae28ccfe9ac90f5bdf4a580a36b2a51d",
+    "three": "^0.187.0"
   }
 }
