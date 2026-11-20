@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17191d">
+  <title>Prism Slicer</title>
+  <link rel="stylesheet" href="./slicer.css">
+  <script type="importmap">
+    {"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="All apps"><span class="brand-mark">P</span><span>PRISM</span></a>
+    <nav class="menu" aria-label="Application menu">
+      <button data-menu="file">File</button><button data-menu="edit">Edit</button>
+      <button data-menu="view">View</button><button data-menu="printer">Printer</button>
+      <button data-menu="settings">Settings</button><button data-menu="help">Help</button>
+    </nav>
+    <div class="top-actions">
+      <label class="tool-button">Import<input id="model-file" type="file" accept=".stl,.obj,.ply,.amf,.3mf,.dae,.gltf,.glb" multiple hidden></label>
+      <label class="tool-button">Open<input id="project-file" type="file" accept=".prism,application/json" hidden></label>
+      <button id="save-project" class="tool-button">Save</button>
+      <button id="slice-button" class="primary">Slice</button>
+      <select id="output-format" class="tool-button" aria-label="Output format"></select>
+      <button id="export-button" class="tool-button" disabled>Export</button>
+      <a class="tool-button" href="./">Apps</a>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="left-panel panel">
+      <div class="panel-heading"><span>Objects</span><span id="object-count">0</span></div>
+      <div id="object-list" class="object-list"><div class="empty-object">Drop STL or OBJ files here</div></div>
+      <div class="object-actions">
+        <button id="duplicate-object" title="Duplicate">Duplicate</button>
+        <button id="delete-object" title="Delete">Delete</button>
+        <button id="arrange-object" title="Arrange">Arrange</button>
+      </div>
+      <div class="transform-tools">
+        <div class="section-title">Transform</div>
+        <label>X <input id="pos-x" type="number" value="0" step="1"></label>
+        <label>Y <input id="pos-y" type="number" value="0" step="1"></label>
+        <label>Z <input id="pos-z" type="number" value="0" step="1"></label>
+        <label>Scale % <input id="scale-value" type="number" value="100" min="1" max="1000"></label>
+        <div class="transform-actions">
+          <button id="center-object">Center</button><button id="plate-object">Place on plate</button>
+        </div>
+      </div>
+    </aside>
+
+    <section id="viewport" class="viewport" aria-label="3D build plate">
+      <div id="drop-overlay" class="drop-overlay">Drop model files</div>
+      <div class="view-toolbar">
+        <button data-view="perspective" class="active" title="Perspective">3D</button>
+        <button data-view="top" title="Top view">Top</button>
+        <button data-view="front" title="Front view">Front</button>
+        <button data-view="side" title="Side view">Side</button>
+      </div>
+      <div class="axis-widget" aria-hidden="true"><i class="axis-x"></i><i class="axis-y"></i><i class="axis-z"></i></div>
+    </section>
+
+    <aside class="right-panel panel">
+      <div class="tabs"><button class="active" data-tab="print">Print</button><button data-tab="printer">Printer</button></div>
+      <div id="print-tab" class="settings-tab">
+        <label>Profile
+          <select id="profile">
+            <option value="draft">Draft - 0.20 mm</option>
+            <option value="normal" selected>Standard - 0.16 mm</option>
+            <option value="fine">Fine - 0.08 mm</option>
+          </select>
+        </label>
+        <div class="setting-grid">
+          <label>Layer height <input id="layer-height" type="number" value="0.16" min="0.04" max="1" step="0.01"></label>
+          <label>Line width <input id="line-width" type="number" value="0.44" min="0.1" max="2" step="0.01"></label>
+          <label>Wall count <input id="wall-count" type="number" value="3" min="1" max="10"></label>
+          <label>Infill <input id="infill-density" type="number" value="20" min="0" max="100"></label>
+        </div>
+        <label>Infill pattern
+          <select id="infill-pattern"><option>Grid</option><option>Lines</option><option>Triangles</option></select>
+        </label>
+        <label class="check"><input id="supports" type="checkbox" disabled> Generate supports (not yet available)</label>
+        <label>Adhesion
+          <select id="adhesion"><option value="none">None</option></select>
+        </label>
+        <div class="section-title">Temperature</div>
+        <div class="setting-grid">
+          <label>Nozzle <input id="nozzle-temp" type="number" value="205" min="100" max="450"></label>
+          <label>Bed <input id="bed-temp" type="number" value="60" min="0" max="180"></label>
+          <label>Print speed <input id="print-speed" type="number" value="50" min="1" max="300"></label>
+          <label>Flow % <input id="flow-rate" type="number" value="100" min="50" max="150"></label>
+        </div>
+      </div>
+      <div id="printer-tab" class="settings-tab hidden">
+        <label>Search printers<input id="printer-search" class="printer-search" type="search" placeholder="Manufacturer, series, model"></label>
+        <div class="setting-grid">
+          <label>Manufacturer<select id="printer-manufacturer"></select></label>
+          <label>Series<select id="printer-series"></select></label>
+        </div>
+        <label>Printer profile<select id="printer-profile"></select></label>
+        <div class="printer-card">
+          <div class="printer-image"><img id="printer-image" alt="" hidden><span id="printer-image-empty">No verified printer image</span></div>
+          <div id="printer-name">Custom FDM</div>
+          <small id="printer-volume">220 × 220 × 250 mm</small>
+          <div id="printer-warning" class="warning">Profile validation required before physical use.</div>
+          <div id="printer-details" class="profile-note"></div>
+          <div id="printer-outputs" class="profile-note"></div>
+        </div>
+        <div class="section-title">Build volume (mm)</div>
+        <div class="setting-grid volume-grid">
+          <label>X <input id="volume-x" type="number" min="10" max="2000" value="220"></label>
+          <label>Y <input id="volume-y" type="number" min="10" max="2000" value="220"></label>
+          <label>Z <input id="volume-z" type="number" min="10" max="3000" value="250"></label>
+          <label>Nozzle<select id="nozzle-diameter"></select></label>
+        </div>
+        <label>Manufacturer<input id="profile-manufacturer" class="printer-search" maxlength="80" placeholder="Custom"></label>
+        <label>Profile name<input id="profile-name" class="printer-search" maxlength="80" placeholder="My printer"></label>
+        <div class="profile-actions">
+          <button id="save-profile">Save as printer</button>
+          <label class="import-profile">Import JSON<input id="import-profile" type="file" accept=".json,application/json" hidden></label>
+          <button id="export-profile">Export selected</button>
+        </div>
+        <details class="advanced-profile">
+          <summary>Printer configuration</summary>
+          <div class="setting-grid">
+            <label>Filament diameter<input id="profile-filament-diameter" type="number" min="0.1" max="5" step="0.01" value="1.75"></label>
+            <label>Extruders<input id="profile-extruders" type="number" min="1" max="16" step="1" value="1"></label>
+            <label>Max nozzle °C<input id="profile-max-nozzle" type="number" min="0" max="1000"></label>
+            <label>Max bed °C<input id="profile-max-bed" type="number" min="0" max="500"></label>
+          </div>
+          <label>Build plate<select id="profile-plate-shape"><option value="rectangular">Rectangular</option><option value="circular">Circular</option><option value="custom">Custom</option></select></label>
+          <label class="check"><input id="profile-heated-bed" type="checkbox"> Heated bed</label>
+          <label class="check"><input id="profile-origin-center" type="checkbox"> Origin at bed center</label>
+          <label class="check"><input id="profile-relative-extrusion" type="checkbox"> Relative extrusion (M83)</label>
+          <label>Nozzle options (mm, comma separated)<input id="profile-nozzles" class="printer-search" maxlength="100" value="0.4"></label>
+          <label>Firmware type<input id="profile-firmware" class="printer-search" maxlength="80"></label>
+          <label>Print-head configuration<input id="profile-head" class="printer-search" maxlength="120"></label>
+          <label>Materials (comma separated)<input id="profile-materials" class="printer-search" maxlength="300"></label>
+          <label>Retraction distance (mm)<input id="profile-retraction-distance" type="number" min="0" max="100" step="0.1"></label>
+          <label>Retraction speed (mm/s)<input id="profile-retraction-speed" type="number" min="0" max="300" step="1"></label>
+          <label>Start G-code<textarea id="profile-start-gcode" rows="4"></textarea></label>
+          <label>End G-code<textarea id="profile-end-gcode" rows="4"></textarea></label>
+        </details>
+        <label>Filament
+          <select id="filament-profile">
+            <option value="pla">PLA - 205 °C / 60 °C</option>
+            <option value="petg">PETG - 235 °C / 80 °C</option>
+            <option value="abs">ABS - 245 °C / 100 °C</option>
+          </select>
+        </label>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="bottom-panel">
+    <div class="slice-status"><span id="status-dot"></span><span id="status-text">Ready</span></div>
+    <div class="estimate"><span>Time <b id="print-time">--</b></span><span>Filament <b id="filament-use">--</b></span><span>Layers <b id="layer-count">--</b></span></div>
+    <div class="layer-control"><button id="layer-first" title="First layer">|‹</button><input id="layer-slider" type="range" min="0" max="0" value="0"><button id="layer-last" title="Final layer">›|</button></div>
+  </footer>
+  <script type="module" src="./slicer.js"></script>
+</body>
+</html>

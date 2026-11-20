@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#11182a">
+  <title>Aether Desktop</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="boot-screen" class="system-screen">
+    <div class="boot-mark">✦</div>
+    <div class="brand-name">aether</div>
+    <div class="boot-spinner"></div>
+    <span class="boot-caption">Preparing your workspace</span>
+  </section>
+
+  <section id="login-screen" class="system-screen hidden">
+    <div class="login-card">
+      <div class="login-avatar">✦</div>
+      <h1>Welcome back</h1>
+      <p>Your own little corner of the cloud.</p>
+      <label for="login-name">Profile name</label>
+      <input id="login-name" autocomplete="name" value="Alex Morgan" maxlength="24">
+      <button id="login-button" class="primary-button">Sign in <span>→</span></button>
+      <small>Your files stay on this device.</small>
+    </div>
+    <div class="screen-brand">AETHER DESKTOP</div>
+  </section>
+
+  <main id="desktop" class="hidden">
+    <div class="wallpaper-glow"></div>
+    <div id="desktop-shortcuts" class="desktop-shortcuts"></div>
+    <div id="windows-layer"></div>
+    <aside id="start-menu" class="start-menu glass hidden">
+      <label class="start-search"><span>⌕</span><input id="app-search" placeholder="Search apps and settings" autocomplete="off"></label>
+      <div class="start-section-heading"><b>All apps</b><span>Explore &nbsp;›</span></div>
+      <div id="start-apps" class="start-apps"></div>
+      <div class="start-profile"><div class="profile-avatar">A</div><span id="profile-label">Alex Morgan</span><button id="start-power" title="Power options">⏻</button></div>
+    </aside>
+    <aside id="notification-panel" class="notification-panel glass hidden">
+      <div class="panel-top"><span>Quick settings</span><button data-close-panel>×</button></div>
+      <div class="quick-grid">
+        <button class="quick-tile active" data-toggle-wifi><span>◉</span><b>Wi-Fi</b><small>Connected</small></button>
+        <button class="quick-tile active" data-toggle-mode><span>☾</span><b>Focus</b><small>On</small></button>
+        <button class="quick-tile" data-open-settings><span>◐</span><b>Display</b><small>Settings</small></button>
+        <button class="quick-tile" data-open-settings><span>⚙</span><b>System</b><small>Settings</small></button>
+      </div>
+      <input class="brightness-slider" type="range" min="50" max="120" value="100" aria-label="Screen brightness">
+      <div class="notification"><span class="notification-icon">✦</span><div><b>Welcome to Aether</b><p>Your desktop is ready. Open Start to explore.</p></div></div>
+      <button class="power-menu-button" id="panel-power">⏻ &nbsp; Power options</button>
+    </aside>
+    <aside id="power-menu" class="power-menu glass hidden">
+      <button id="power-restart">↻ &nbsp; Restart</button>
+      <button id="power-shutdown">⏻ &nbsp; Shut down</button>
+    </aside>
+    <footer class="taskbar">
+      <div class="taskbar-center">
+        <button id="start-button" class="taskbar-button start-button" title="Start">✦</button>
+        <button id="task-search" class="taskbar-search"><span>⌕</span> Search</button>
+        <div class="taskbar-pins" id="taskbar-pins"></div>
+        <div class="running-apps" id="running-apps"></div>
+      </div>
+      <div class="system-tray">
+        <button class="tray-network" id="tray-network" title="Quick settings"><span>⌁</span><span>◖</span></button>
+        <button id="tray-clock" class="tray-clock"><span id="clock-time">9:41 AM</span><span id="clock-date">Wed, Nov 19</span></button>
+        <button id="tray-notifications" class="tray-notifications" title="Notifications">◔</button>
+      </div>
+    </footer>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

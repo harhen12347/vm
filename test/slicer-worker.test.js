@@ -59,3 +59,40 @@ test('rejects models outside the selected printer build volume', () => {
   assert.equal(result.type, 'error');
   assert.match(result.message, /outside the 220 × 220 × 250 mm build volume/);
 });
+
+test('rejects temperatures above the selected printer profile limits', () => {
+  const result = runWorker(cubeTriangles(), { maxNozzleTemperature: 200 });
+  assert.equal(result.type, 'error');
+  assert.match(result.message, /exceeds the printer profile maximum/);
+});
+
+test('uses printer-specific start and end G-code when supplied', () => {
+  const result = runWorker(cubeTriangles(), {
+    startGcode: '; custom start\nG21',
+    endGcode: '; custom end\nM84'
+  });
+  assert.equal(result.type, 'complete');
+  assert.match(result.gcode, /^; custom start\nG21/);
+  assert.match(result.gcode, /; custom end\nM84$/);
+});
+
+test('emits centered XY coordinates for printers whose origin is the bed center', () => {
+  const result = runWorker(cubeTriangles(), { originAtCenter: true });
+  assert.equal(result.type, 'complete');
+  assert.match(result.gcode, /G0 X-/);
+});
+
+test('rejects printer G-code containing unresolved placeholders', () => {
+  const result = runWorker(cubeTriangles(), { startGcode: 'M900 K[pressure_advance]' });
+  assert.equal(result.type, 'error');
+  assert.match(result.message, /unsupported placeholders: pressure_advance/);
+});
+
+test('emits incremental extrusion values for relative-extrusion printers', () => {
+  const result = runWorker(cubeTriangles(), { relativeExtrusion: true, startGcode: 'G28' });
+  assert.equal(result.type, 'complete');
+  assert.match(result.gcode, /M83 ; relative extrusion/);
+  const extrusionValues = [...result.gcode.matchAll(/^G1 .* E([\d.]+)/gm)].map((match) => Number(match[1]));
+  assert.ok(extrusionValues.length > 1);
+  assert.ok(extrusionValues.every((value) => value < 100));
+});

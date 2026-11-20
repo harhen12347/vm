@@ -11,7 +11,9 @@
     "serve": "node server.js",
     "build:web": "node scripts/build-web.js",
     "publish:web": "npm run build:web && node scripts/publish-web.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check scripts/build-web.js && node --check scripts/publish-web.js",
+    "import:cura-printers": "node scripts/import-cura-printers.js",
+    "import:flashforge-printers": "node scripts/import-flashforge-printers.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check src/printer-database.mjs && node --check scripts/import-cura-printers.js && node --check scripts/import-flashforge-printers.js && node --check scripts/build-web.js && node --check scripts/publish-web.js",
     "test": "node --test"
   },
   "devDependencies": {

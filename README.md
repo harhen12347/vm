@@ -2,23 +2,55 @@
 
 ## Prism 3D slicer
 
-Run the browser slicer with:
+Open the three-tool launcher at:
+
+- `/` or `http://localhost:3000/` - app launcher
+- `/desktop/` - Aether Desktop
+- `/cad.html` - CAD Converter
+- `/slicer.html` - Prism 3D Slicer
+
+Run the browser tools with:
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000`. The viewport renders the build plate, printer frame, grid, and selected
-printer's build volume. It imports binary/ASCII STL and OBJ, supports basic object transforms, worker-based
-contour slicing, layer previews, estimates, and generic G-code export. This is an early slicer, not a
-replacement for Cura/FlashPrint: only generic templates are bundled, imported profiles currently provide
-build dimensions/nozzle size, and generated G-code is not printer-validated. Add custom profiles from the
-Printer tab or import/export Prism profile JSON. The SLDPRT converter remains at `/cad` (or `/cad.html`
-on the static site), and the desktop simulator remains at `/desktop`.
-Profile JSON uses `manufacturer`, `name`, `buildVolume` (`x`, `y`, `z` in millimetres), and
-`nozzleDiameter`; import accepts a single profile or an array. This does not import Cura inheritance,
-start/end G-code, or printer-specific file formats. Supports and non-rectangular build plates are not
-implemented yet.
+Open `http://localhost:3000`. The slicer imports STL, OBJ, PLY, AMF, 3MF, DAE, GLTF, and GLB meshes; GLTF
+files must embed their buffers and images. It supports object transforms, worker-based contour slicing,
+layer previews, estimates, and profile-gated generic G-code export. It does not export FlashForge G/GX,
+UltiMaker UFP, G-code gzip, FPP, or 3MF projects. These are deliberately unavailable until their actual
+format exporters exist. The native editable project format is `.prism`; 3MF currently imports as mesh data.
+
+The versioned [`src/printer-database.json`](src/printer-database.json) contains 634 visible Cura printer
+definitions and nine machine models from the vendor-maintained
+[FlashForge/Orca-Flashforge](https://github.com/FlashForge/Orca-Flashforge) profiles. Its total is 645
+profiles, including the bundled custom templates. Cura sources come from
+[Ultimaker/Cura](https://github.com/Ultimaker/Cura).
+Every imported record retains its upstream commit and source URL. Missing facts and unresolved G-code
+macros are shown as warnings; profiles with unknown origins, incomplete slicing dimensions, or unsupported
+machine-code placeholders cannot be sliced/exported. No bundled printer has been physically tested by
+this application. Cura-derived third-party definitions are limited to those in the upstream Cura tree;
+the FlashForge set is limited to the models in FlashForge's current public profile bundle.
+
+Profile data is derived from Cura (LGPL-3.0) and FlashForge Orca (AGPL-3.0); see the linked upstream
+repositories for their license texts and attribution. The profile data does not include upstream slicer
+code.
+
+To refresh the bundled profiles from current upstream checkouts:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/Ultimaker/Cura.git ../Cura
+git -C ../Cura sparse-checkout set resources/definitions resources/extruders
+npm run import:cura-printers -- ../Cura
+git clone --depth 1 --filter=blob:none --sparse https://github.com/FlashForge/Orca-Flashforge.git ../Orca-Flashforge
+git -C ../Orca-Flashforge sparse-checkout set resources/profiles
+npm run import:flashforge-printers -- ../Orca-Flashforge
+```
+
+Users can create, edit, import, and export JSON printer profiles from the Printer tab. Custom profiles are
+saved in browser storage; imported machine definitions are read-only and can be copied into a custom
+profile. The SLDPRT converter remains at `/cad` (or `/cad.html` on the static site), and the desktop
+simulator remains at `/desktop`.
 
 Aether is a Windows 11-inspired desktop **simulator** built with Electron. It opens as a native desktop app and uses Electron's real Chromium engine for web browsing, but it does not boot or emulate a separate operating system.
 

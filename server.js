@@ -10,13 +10,22 @@ const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '0.0.0.0';
 const files = new VirtualFileSystem(path.join(os.homedir(), '.aether-desktop', 'aether-files.json'));
 const staticFiles = new Map([
-  ['/', path.join(__dirname, 'src', 'slicer.html')],
+  ['/', path.join(__dirname, 'src', 'launcher.html')],
+  ['/launcher.css', path.join(__dirname, 'src', 'launcher.css')],
+  ['/slicer', path.join(__dirname, 'src', 'slicer.html')],
+  ['/slicer.html', path.join(__dirname, 'src', 'slicer.html')],
   ['/slicer.css', path.join(__dirname, 'src', 'slicer.css')],
   ['/slicer.js', path.join(__dirname, 'src', 'slicer.js')],
+  ['/printer-database.mjs', path.join(__dirname, 'src', 'printer-database.mjs')],
+  ['/printer-database.json', path.join(__dirname, 'src', 'printer-database.json')],
   ['/slicer-worker.js', path.join(__dirname, 'src', 'slicer-worker.js')],
   ['/cad', path.join(__dirname, 'src', 'cad.html')],
+  ['/cad.html', path.join(__dirname, 'src', 'cad.html')],
   ['/vendor/three/three.module.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.js')],
   ['/desktop', path.join(__dirname, 'src', 'index.html')],
+  ['/desktop/', path.join(__dirname, 'src', 'index.html')],
+  ['/desktop/styles.css', path.join(__dirname, 'src', 'styles.css')],
+  ['/desktop/renderer.js', path.join(__dirname, 'src', 'renderer.js')],
   ['/styles.css', path.join(__dirname, 'src', 'styles.css')],
   ['/renderer.js', path.join(__dirname, 'src', 'renderer.js')],
   ['/cad.css', path.join(__dirname, 'src', 'cad.css')],
@@ -32,6 +41,7 @@ const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8'
 };
 
@@ -135,7 +145,13 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const filePath = staticFiles.get(requestUrl.pathname);
+    let filePath = staticFiles.get(requestUrl.pathname);
+    const addonPrefix='/vendor/three/addons/';
+    if(!filePath&&requestUrl.pathname.startsWith(addonPrefix)){
+      const addonRoot=path.resolve(__dirname,'node_modules','three','examples','jsm');
+      const requestedPath=path.resolve(addonRoot,requestUrl.pathname.slice(addonPrefix.length));
+      if(requestedPath.startsWith(`${addonRoot}${path.sep}`))filePath=requestedPath;
+    }
     if (request.method !== 'GET' || !filePath) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Not found');

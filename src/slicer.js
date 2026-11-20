@@ -1,4 +1,14 @@
 import * as THREE from './vendor/three/three.module.js';
+import printerDatabase from './printer-database.json' with { type: 'json' };
+import { availableOutputFormats, OUTPUT_FORMATS, profileErrors, profileWarnings, unsupportedGcodeTokens, validateDatabase } from './printer-database.mjs';
+import { AMFLoader } from 'three/addons/loaders/AMFLoader.js';
+import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+
+validateDatabase(printerDatabase);
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -12,24 +22,34 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 viewport.prepend(renderer.domElement);
 
-const printerProfiles = [
-  { id:'generic-220', manufacturer:'Custom', name:'Open FDM 220 × 220', x:220, y:220, z:250, nozzle:0.4, status:'Untested template' },
-  { id:'generic-250', manufacturer:'Custom', name:'Open FDM 250 × 210', x:250, y:210, z:220, nozzle:0.4, status:'Untested template' }
-];
+const printerProfiles = printerDatabase.profiles.map((profile) => ({
+  ...profile,
+  name: profile.model,
+  x: profile.buildVolume.x,
+  y: profile.buildVolume.y,
+  z: profile.buildVolume.z,
+  nozzle: profile.nozzleDiameters[0],
+  status: profileWarnings(profile).join(' ')
+}));
 try {
   const saved=localStorage.getItem('prism-printer-profiles');
   if(saved){
     const records=JSON.parse(saved);
     if(!Array.isArray(records))throw new Error('Saved profile data is not a list.');
-    for(const entry of records){
-      if(!validPrinterProfile(entry))throw new Error('A saved printer profile has invalid dimensions.');
-      printerProfiles.push({
-        id:`custom-saved-${printerProfiles.length}`,
-        manufacturer:entry.manufacturer.trim(),
-        name:entry.name.trim(),
-        x:Number(entry.buildVolume.x),y:Number(entry.buildVolume.y),z:Number(entry.buildVolume.z),
-        nozzle:Number(entry.nozzleDiameter),status:'Saved custom profile — not printer-tested'
-      });
+    for(let index=0;index<records.length;index++){
+      const entry=records[index];
+      const profile=entry.nozzleDiameters ? entry : {
+        id:`custom-saved-${index}`, manufacturer:entry.manufacturer, series:'Custom', model:entry.name,
+        buildVolume:entry.buildVolume, nozzleDiameters:[entry.nozzleDiameter], filamentDiameter:1.75,
+        extruderCount:1, heatedBed:null, maxNozzleTemperature:null, maxBedTemperature:null,
+        buildPlateShape:'rectangular', printHeadConfiguration:null, firmwareType:null,
+        startGcode:null, endGcode:null, retraction:null, materials:[], outputFormats:['gcode'],
+        source:{kind:'legacy-custom-profile',url:null}, tested:false, originAtCenter:false, relativeExtrusion:false
+      };
+      const errors=profileErrors(profile);
+      if(errors.length)throw new Error(`A saved printer profile is invalid: ${errors.join(' ')}`);
+      printerProfiles.push({...profile,name:profile.model,x:profile.buildVolume.x,y:profile.buildVolume.y,
+        z:profile.buildVolume.z,nozzle:profile.nozzleDiameters[0],status:profileWarnings(profile).join(' ')});
     }
   }
 } catch(error) {
@@ -67,6 +87,7 @@ function makeBuildPlate() {
   });
   buildGroup.clear();
   const { x:plateWidth, y:plateDepth, z:plateHeight } = printerProfile;
+  if (![plateWidth,plateDepth,plateHeight].every((value)=>Number.isFinite(value)&&value>0)) return;
   const frameColor = new THREE.MeshStandardMaterial({ color:0x68717d, metalness:0.62, roughness:0.35 });
   const bed = new THREE.Mesh(
     new THREE.BoxGeometry(plateWidth, plateDepth, 3),
@@ -238,23 +259,6 @@ function parseAsciiStl(text) {
   return vertices.map((match) => [Number(match[1]), Number(match[2]), Number(match[3])]);
 }
 
-function parseObj(text) {
-  const vertices = [];
-  const faces = [];
-  for (const line of text.split(/\r?\n/)) {
-    const parts = line.trim().split(/\s+/);
-    if (parts[0] === 'v') vertices.push([Number(parts[1]), Number(parts[2]), Number(parts[3])]);
-    if (parts[0] === 'f') {
-      const indexes = parts.slice(1).map((part) => Number(part.split('/')[0]) - 1);
-      for (let i = 1; i < indexes.length - 1; i++) {
-        faces.push(vertices[indexes[0]], vertices[indexes[i]], vertices[indexes[i + 1]]);
-      }
-    }
-  }
-  if (!faces.length) throw new Error('No polygon faces found in OBJ.');
-  return faces.flat();
-}
-
 function geometryFromPositions(positions) {
   const geometry = new THREE.BufferGeometry();
   const flat = new Float32Array(positions.length * 3);
@@ -303,11 +307,14 @@ async function importFiles(fileList) {
       if(file.size>128*1024*1024)throw new Error(`${file.name}: file exceeds 128 MB.`);
       const buffer = await file.arrayBuffer();
       let positions;
-      if (/\.obj$/i.test(file.name)) positions = parseObj(new TextDecoder().decode(buffer));
+      if (/\.obj$/i.test(file.name)) positions = positionsFromObject(new OBJLoader().parse(new TextDecoder().decode(buffer)));
       else if (/\.stl$/i.test(file.name)) {
         positions = parseBinaryStl(buffer);
         if (!positions) positions = parseAsciiStl(new TextDecoder().decode(buffer));
-      } else throw new Error('Use STL or OBJ files.');
+      } else {
+        const loaded=await loadMeshObject(file.name,buffer);
+        positions=positionsFromObject(loaded);
+      }
       if (positions.length < 9) throw new Error('Mesh contains too few vertices.');
       if(positions.length/3>300_000)throw new Error(`${file.name}: exceeds the 300,000 triangle browser limit.`);
       const geometry = geometryFromPositions(positions);
@@ -331,6 +338,46 @@ async function importFiles(fileList) {
   }
   setObjectList();
   if(imported)invalidateSlice();
+}
+
+async function loadMeshObject(filename,buffer) {
+  const extension=filename.split('.').at(-1).toLowerCase();
+  if(extension==='amf')return new AMFLoader().parse(buffer);
+  if(extension==='3mf')return new ThreeMFLoader().parse(buffer);
+  if(extension==='dae')return new ColladaLoader().parse(new TextDecoder().decode(buffer),'').scene;
+  if(extension==='ply'){
+    const geometry=new PLYLoader().parse(buffer);
+    return new THREE.Mesh(geometry,new THREE.MeshStandardMaterial());
+  }
+  if(extension==='gltf'||extension==='glb'){
+    if(extension==='gltf'){
+      const document=JSON.parse(new TextDecoder().decode(buffer));
+      const external=[...(document.buffers||[]),...(document.images||[])].some((entry)=>entry.uri&&!entry.uri.startsWith('data:'));
+      if(external)throw new Error('This GLTF references external files. Embed its buffers and images or use GLB.');
+    }
+    return (await new GLTFLoader().parseAsync(buffer,'')).scene;
+  }
+  throw new Error('Supported imports: STL, OBJ, PLY, AMF, 3MF, DAE, GLTF, and GLB.');
+}
+
+function positionsFromObject(root) {
+  const positions=[];
+  root.updateMatrixWorld(true);
+  root.traverse((child)=>{
+    if(!child.isMesh||!child.geometry?.attributes?.position)return;
+    const geometry=child.geometry;
+    const vertices=geometry.attributes.position;
+    const indices=geometry.index;
+    const count=indices?indices.count:vertices.count;
+    if(count%3!==0)throw new Error('Imported mesh contains non-triangle geometry.');
+    const point=new THREE.Vector3();
+    for(let index=0;index<count;index++){
+      point.fromBufferAttribute(vertices,indices?indices.getX(index):index).applyMatrix4(child.matrixWorld);
+      positions.push([point.x,point.y,point.z]);
+    }
+  });
+  if(!positions.length)throw new Error('No triangle mesh geometry was found in the selected file.');
+  return positions;
 }
 
 function placeOnPlate(item) {
@@ -472,6 +519,23 @@ function collectMeshTriangles() {
 
 $('#slice-button').addEventListener('click', () => {
   if (!objects.length) return showStatus('Import a model before slicing.', true);
+  if (![printerProfile.x,printerProfile.y,printerProfile.z,printerProfile.filamentDiameter]
+    .every((value)=>Number.isFinite(Number(value))&&Number(value)>0)){
+    return showStatus('This printer profile is incomplete. Add build volume and filament diameter before slicing.',true);
+  }
+  if(!printerProfile.nozzleDiameters.length){
+    return showStatus('This printer profile has no verified nozzle diameter options.',true);
+  }
+  if(typeof printerProfile.originAtCenter!=='boolean'){
+    return showStatus('This printer profile does not specify its coordinate origin.',true);
+  }
+  const selectedNozzle=Number($('#nozzle-diameter').value);
+  if(!printerProfile.nozzleDiameters.some((diameter)=>Math.abs(Number(diameter)-selectedNozzle)<0.0001)){
+    return showStatus('Selected nozzle diameter is not listed by this printer profile.',true);
+  }
+  if(!availableOutputFormats(printerProfile).length){
+    return showStatus('This printer profile has no output format supported by the current exporter.',true);
+  }
   sliceRequestId++;
   const requestId=sliceRequestId;
   gcodeResult = null;
@@ -484,7 +548,16 @@ $('#slice-button').addEventListener('click', () => {
     infillPattern:$('#infill-pattern').value,
     adhesion:$('#adhesion').value, nozzleTemperature:Number($('#nozzle-temp').value),
     bedTemperature:Number($('#bed-temp').value), printSpeed:Number($('#print-speed').value),
-    flowRate:Number($('#flow-rate').value), filamentDiameter:1.75,
+    flowRate:Number($('#flow-rate').value), filamentDiameter:printerProfile.filamentDiameter,
+    nozzleDiameter:selectedNozzle,
+    maxNozzleTemperature:printerProfile.maxNozzleTemperature,
+    maxBedTemperature:printerProfile.maxBedTemperature,
+    originAtCenter:printerProfile.originAtCenter,
+    relativeExtrusion:printerProfile.relativeExtrusion,
+    extruderCount:printerProfile.extruderCount,
+    retraction:printerProfile.retraction,
+    startGcode:printerProfile.startGcode,
+    endGcode:printerProfile.endGcode,
     buildVolume:{x:printerProfile.x,y:printerProfile.y,z:printerProfile.z}
   };
   scene.updateMatrixWorld(true);
@@ -509,7 +582,7 @@ worker.addEventListener('message',(event)=>{
   $('#print-time').textContent=data.estimatedMinutes ? `${Math.floor(data.estimatedMinutes/60)}h ${Math.round(data.estimatedMinutes%60)}m`:'--';
   $('#filament-use').textContent=`${data.filamentMm.toFixed(1)} mm · ${data.filamentGrams.toFixed(1)} g`;
   $('#layer-count').textContent=data.layers.length;
-  $('#export-button').disabled=false;
+  $('#export-button').disabled=!availableOutputFormats(printerProfile).includes($('#output-format').value);
   $('#layer-slider').max=Math.max(0,data.layers.length-1);
   $('#layer-slider').value=String(data.layers.length-1);
   renderToolpaths(data.layers.length-1);
@@ -543,6 +616,7 @@ $('#layer-last').addEventListener('click',()=>{if(!gcodeResult)return;const last
 
 $('#export-button').addEventListener('click',()=>{
   if(!gcodeResult)return;
+  if($('#output-format').value!=='gcode')return showStatus('The selected output format has no validated exporter.',true);
   const blob=new Blob([gcodeResult.gcode],{type:'text/x-gcode'});
   const url=URL.createObjectURL(blob);
   const link=document.createElement('a');
@@ -616,52 +690,104 @@ $('#project-file').addEventListener('change',async(event)=>{
   }catch(error){showStatus(error.message,true);}
 });
 
-function renderPrinterOptions(query='') {
+function renderPrinterOptions(query=$('#printer-search').value) {
   const search=query.trim().toLowerCase();
-  const filtered=printerProfiles.filter((profile)=>`${profile.manufacturer} ${profile.name}`.toLowerCase().includes(search));
+  const manufacturerSelect=$('#printer-manufacturer');
+  const manufacturers=[...new Set(printerProfiles.map((profile)=>profile.manufacturer))].sort();
+  const previousManufacturer=manufacturerSelect.value||printerProfile.manufacturer;
+  manufacturerSelect.replaceChildren(...manufacturers.map((manufacturer)=>new Option(manufacturer,manufacturer)));
+  manufacturerSelect.value=manufacturers.includes(previousManufacturer)?previousManufacturer:manufacturers[0]||'';
+  const manufacturerProfiles=printerProfiles.filter((profile)=>profile.manufacturer===manufacturerSelect.value);
+  const seriesSelect=$('#printer-series');
+  const series=[...new Set(manufacturerProfiles.map((profile)=>profile.series))].sort();
+  const previousSeries=seriesSelect.value||printerProfile.series;
+  seriesSelect.replaceChildren(...series.map((value)=>new Option(value,value)));
+  seriesSelect.value=series.includes(previousSeries)?previousSeries:series[0]||'';
+  const filtered=manufacturerProfiles.filter((profile)=>profile.series===seriesSelect.value&&
+    `${profile.manufacturer} ${profile.series} ${profile.model}`.toLowerCase().includes(search));
   const select=$('#printer-profile');
   select.replaceChildren();
+  if(!filtered.length){
+    select.add(new Option('No matching printer models',''));
+    return;
+  }
   filtered.forEach((profile)=>{
     const option=document.createElement('option');
     option.value=profile.id;
-    option.textContent=`${profile.manufacturer} · ${profile.name}`;
+    option.textContent=profile.model;
     select.append(option);
   });
-  if (filtered.some((profile)=>profile.id===printerProfile.id)) {
-    select.value=printerProfile.id;
-  }
+  select.value=filtered.some((profile)=>profile.id===printerProfile.id)?printerProfile.id:filtered[0].id;
 }
 
 function applyPrinterProfile() {
   $('#printer-name').textContent=`${printerProfile.manufacturer} ${printerProfile.name}`;
-  $('#printer-volume').textContent=`${printerProfile.x} × ${printerProfile.y} × ${printerProfile.z} mm`;
-  $('#printer-warning').textContent=printerProfile.status;
+  const hasBuildVolume=[printerProfile.x,printerProfile.y,printerProfile.z].every((value)=>Number.isFinite(Number(value))&&Number(value)>0);
+  $('#printer-volume').textContent=hasBuildVolume?`${printerProfile.x} × ${printerProfile.y} × ${printerProfile.z} mm`:'Build volume unspecified';
+  const warnings=profileWarnings(printerProfile);
+  if(printerProfile.buildPlateShape!=='rectangular')warnings.push('The slicer currently supports rectangular build plates only.');
+  if(!availableOutputFormats(printerProfile).length)warnings.push('No compatible printer output format has an implemented exporter.');
+  $('#printer-warning').textContent=warnings.length?warnings.join(' '):'Profile fields are complete; physical printer testing is still required.';
+  $('#printer-warning').classList.toggle('warning-complete',warnings.length===0);
   $('#volume-x').value=printerProfile.x;
   $('#volume-y').value=printerProfile.y;
   $('#volume-z').value=printerProfile.z;
-  $('#nozzle-diameter').value=printerProfile.nozzle;
+  const nozzleSelect=$('#nozzle-diameter');
+  nozzleSelect.replaceChildren(...printerProfile.nozzleDiameters.map((diameter)=>new Option(`${diameter} mm`,String(diameter))));
+  nozzleSelect.disabled=!printerProfile.nozzleDiameters.length;
+  if(printerProfile.nozzleDiameters.length)nozzleSelect.value=String(printerProfile.nozzle);
+  $('#profile-name').value=printerProfile.model;
+  $('#profile-manufacturer').value=printerProfile.manufacturer;
+  $('#profile-filament-diameter').value=printerProfile.filamentDiameter??'';
+  $('#profile-extruders').value=printerProfile.extruderCount??'';
+  $('#profile-max-nozzle').value=printerProfile.maxNozzleTemperature??'';
+  $('#profile-max-bed').value=printerProfile.maxBedTemperature??'';
+  $('#profile-plate-shape').value=printerProfile.buildPlateShape||'rectangular';
+  $('#profile-heated-bed').checked=printerProfile.heatedBed===true;
+  $('#profile-origin-center').checked=printerProfile.originAtCenter===true;
+  $('#profile-relative-extrusion').checked=printerProfile.relativeExtrusion===true;
+  $('#profile-nozzles').value=(printerProfile.nozzleDiameters||[]).join(', ');
+  $('#profile-firmware').value=printerProfile.firmwareType||'';
+  $('#profile-head').value=printerProfile.printHeadConfiguration||'';
+  $('#profile-materials').value=(printerProfile.materials||[]).join(', ');
+  $('#profile-retraction-distance').value=printerProfile.retraction?.distance??'';
+  $('#profile-retraction-speed').value=printerProfile.retraction?.speed??'';
+  $('#profile-start-gcode').value=printerProfile.startGcode||'';
+  $('#profile-end-gcode').value=printerProfile.endGcode||'';
+  $('#save-profile').textContent=/^(custom|imported)-/.test(printerProfile.id)
+    ?'Update custom printer':'Save as custom printer';
+  $('#printer-details').textContent=[
+    `${printerProfile.extruderCount||'Unspecified'} extruder(s)`,
+    `${printerProfile.filamentDiameter||'Unspecified'} mm filament`,
+    printerProfile.heatedBed===null?'Heated bed unspecified':printerProfile.heatedBed?'Heated bed':'No heated bed',
+    `Firmware: ${printerProfile.firmwareType||'unspecified'}`,
+    `Materials: ${printerProfile.materials?.join(', ')||'unspecified'}`
+  ].join(' · ');
+  const outputIds=printerProfile.outputFormats||[];
+  const templateIssues=unsupportedGcodeTokens(printerProfile);
+  $('#printer-outputs').textContent=`Profile formats: ${outputIds.map((id)=>OUTPUT_FORMATS[id]?.label||id).join(', ')||'none'} · Available here: ${availableOutputFormats(printerProfile).map((id)=>OUTPUT_FORMATS[id].label).join(', ')||'none'}${templateIssues.length?` · Unsupported G-code tokens: ${templateIssues.join(', ')}`:''}`;
+  const image=$('#printer-image');
+  image.hidden=!printerProfile.image;
+  image.src=printerProfile.image||'';
+  $('#printer-image-empty').hidden=Boolean(printerProfile.image);
+  const formats=availableOutputFormats(printerProfile);
+  const formatSelect=$('#output-format');
+  formatSelect.replaceChildren(...formats.map((id)=>new Option(OUTPUT_FORMATS[id].label,id)));
+  formatSelect.disabled=!formats.length;
+  $('#export-button').textContent=formats.length?`Export ${OUTPUT_FORMATS[formats[0]].label}`:'Export unavailable';
+  $('#export-button').disabled=!gcodeResult||!formats.includes(formatSelect.value);
   makeBuildPlate();
-  fitPrinterView();
+  if(hasBuildVolume)fitPrinterView();
 }
 
 function validPrinterProfile(profile) {
-  return profile && typeof profile.manufacturer==='string' && profile.manufacturer.trim() &&
-    typeof profile.name==='string' && profile.name.trim() &&
-    ['x','y','z'].every((key)=>Number.isFinite(Number(profile.buildVolume?.[key])) &&
-      Number(profile.buildVolume[key])>=10 && Number(profile.buildVolume[key])<=3000) &&
-    Number.isFinite(Number(profile.nozzleDiameter)) && Number(profile.nozzleDiameter)>=0.1 &&
-    Number(profile.nozzleDiameter)<=5;
+  return profileErrors(profile).length===0;
 }
 
 function persistPrinterProfiles() {
   const custom=printerProfiles.filter((profile)=>profile.id.startsWith('custom-')||profile.id.startsWith('imported-'));
   try {
-    localStorage.setItem('prism-printer-profiles',JSON.stringify(custom.map((profile)=>({
-    manufacturer:profile.manufacturer,
-    name:profile.name,
-    buildVolume:{x:profile.x,y:profile.y,z:profile.z},
-    nozzleDiameter:profile.nozzle
-    }))));
+    localStorage.setItem('prism-printer-profiles',JSON.stringify(custom));
   } catch(error) {
     showStatus(`Printer profile could not be saved: ${error.message}`,true);
     return false;
@@ -675,6 +801,11 @@ $('#printer-profile').addEventListener('change',(event)=>{
   invalidateSlice();
 });
 $('#printer-search').addEventListener('input',(event)=>renderPrinterOptions(event.target.value));
+$('#printer-manufacturer').addEventListener('change',()=>{
+  $('#printer-series').value='';
+  renderPrinterOptions('');
+});
+$('#printer-series').addEventListener('change',()=>renderPrinterOptions(''));
 $('#profile').addEventListener('change',(event)=>{
   const heights={draft:0.2,normal:0.16,fine:0.08};
   $('#layer-height').value=heights[event.target.value];
@@ -687,18 +818,39 @@ $('#save-profile').addEventListener('click',()=>{
   const name=$('#profile-name').value.trim();
   const manufacturer=$('#profile-manufacturer').value.trim()||'Custom';
   const x=Number($('#volume-x').value),y=Number($('#volume-y').value),z=Number($('#volume-z').value);
-  const nozzle=Number($('#nozzle-diameter').value);
-  const profile={id:`custom-${Date.now()}`,manufacturer,name,x,y,z,nozzle,status:'Custom profile — not printer-tested'};
-  if(!validPrinterProfile({...profile,buildVolume:{x,y,z},nozzleDiameter:nozzle})){
-    showStatus('Enter a profile name, valid build volume, and nozzle diameter.',true);
+  const nozzleDiameters=$('#profile-nozzles').value.split(',').map((value)=>Number(value.trim())).filter(Number.isFinite);
+  const maybeNumber=(id)=>$('#'+id).value===''?null:Number($('#'+id).value);
+  const retractionDistance=maybeNumber('profile-retraction-distance');
+  const isEditing=/^(custom|imported)-/.test(printerProfile.id);
+  const profile={
+    id:isEditing?printerProfile.id:`custom-${Date.now()}`,manufacturer,series:'Custom',model:name,
+    buildVolume:{x,y,z},nozzleDiameters,filamentDiameter:Number($('#profile-filament-diameter').value),
+    extruderCount:Number($('#profile-extruders').value),heatedBed:$('#profile-heated-bed').checked,
+    maxNozzleTemperature:maybeNumber('profile-max-nozzle'),maxBedTemperature:maybeNumber('profile-max-bed'),
+    buildPlateShape:$('#profile-plate-shape').value,
+    originAtCenter:$('#profile-origin-center').checked,
+    relativeExtrusion:$('#profile-relative-extrusion').checked,
+    printHeadConfiguration:$('#profile-head').value.trim()||null,firmwareType:$('#profile-firmware').value.trim()||null,
+    startGcode:$('#profile-start-gcode').value||null,endGcode:$('#profile-end-gcode').value||null,
+    retraction:retractionDistance===null?null:{distance:retractionDistance,speed:maybeNumber('profile-retraction-speed')},
+    materials:$('#profile-materials').value.split(',').map((value)=>value.trim()).filter(Boolean),
+    outputFormats:['gcode'],source:{kind:'user-created',url:null},tested:false
+  };
+  if(!validPrinterProfile(profile)||![x,y,z].every((value)=>Number.isFinite(value)&&value>=10&&value<=3000)||!nozzleDiameters.length){
+    showStatus(`Profile needs correction: ${profileErrors(profile).join(' ')}`,true);
     return;
   }
-  printerProfiles.push(profile);
+  const updated={...profile,name:profile.model,x,y,z,nozzle:nozzleDiameters[0],status:profileWarnings(profile).join(' ')};
+  const previousIndex=printerProfiles.findIndex((entry)=>entry.id===profile.id);
+  const previous=previousIndex>=0?printerProfiles[previousIndex]:null;
+  if(previous)printerProfiles[previousIndex]=updated;
+  else printerProfiles.push(updated);
   if(!persistPrinterProfiles()){
-    printerProfiles.pop();
+    if(previous)printerProfiles[previousIndex]=previous;
+    else printerProfiles.pop();
     return;
   }
-  printerProfile=profile;
+  printerProfile=updated;
   $('#printer-search').value='';
   renderPrinterOptions();
   applyPrinterProfile();
@@ -712,20 +864,21 @@ $('#import-profile').addEventListener('change',async(event)=>{
   if(!file)return;
   try{
     const data=JSON.parse(await file.text());
-    const candidates=Array.isArray(data)?data:[data];
+    const candidates=Array.isArray(data)?data:(Array.isArray(data.profiles)?data.profiles:[data]);
     const imported=[];
     for(const entry of candidates){
-      if(!validPrinterProfile(entry)){
-        throw new Error('Invalid profile. Expected manufacturer, name, buildVolume x/y/z, and nozzleDiameter.');
-      }
-      imported.push({
-        id:`imported-${Date.now()}-${imported.length}`,
-        manufacturer:entry.manufacturer.trim(),
-        name:entry.name.trim(),
-        x:Number(entry.buildVolume.x),y:Number(entry.buildVolume.y),z:Number(entry.buildVolume.z),
-        nozzle:Number(entry.nozzleDiameter),
-        status:'Imported profile — not printer-tested'
-      });
+      const profile=entry.nozzleDiameters?entry:{
+        ...entry,id:`imported-${Date.now()}-${imported.length}`,series:'Custom',model:entry.name,
+        nozzleDiameters:[entry.nozzleDiameter],filamentDiameter:1.75,extruderCount:1,
+        heatedBed:null,maxNozzleTemperature:null,maxBedTemperature:null,buildPlateShape:'rectangular',
+        printHeadConfiguration:null,firmwareType:null,startGcode:null,endGcode:null,retraction:null,
+        materials:[],outputFormats:['gcode'],source:{kind:'imported-legacy',url:null},tested:false,originAtCenter:false,relativeExtrusion:false
+      };
+      profile.id=`imported-${Date.now()}-${imported.length}`;
+      const errors=profileErrors(profile);
+      if(errors.length)throw new Error(`Invalid profile: ${errors.join(' ')}`);
+      imported.push({...profile,name:profile.model,x:profile.buildVolume.x,y:profile.buildVolume.y,
+        z:profile.buildVolume.z,nozzle:profile.nozzleDiameters[0],status:profileWarnings(profile).join(' ')});
     }
     if(!imported.length)throw new Error('The profile file contains no printer profiles.');
     printerProfiles.push(...imported);
@@ -746,9 +899,10 @@ $('#export-profile').addEventListener('click',()=>{
   const data={
     schemaVersion:1,
     manufacturer:printerProfile.manufacturer,
-    name:printerProfile.name,
+    series:printerProfile.series,
+    model:printerProfile.model,
     buildVolume:{x:printerProfile.x,y:printerProfile.y,z:printerProfile.z},
-    nozzleDiameter:printerProfile.nozzle
+    ...Object.fromEntries(Object.entries(printerProfile).filter(([key])=>!['x','y','z','name','nozzle','status'].includes(key)))
   };
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
@@ -758,6 +912,11 @@ $('#export-profile').addEventListener('click',()=>{
 });
 renderPrinterOptions();
 applyPrinterProfile();
+$('#output-format').addEventListener('change',()=>{
+  const format=OUTPUT_FORMATS[$('#output-format').value];
+  $('#export-button').textContent=format?`Export ${format.label}`:'Export unavailable';
+  $('#export-button').disabled=!gcodeResult||!format?.exporter;
+});
 $('#filament-profile').addEventListener('change',(event)=>{
   const temperatures={pla:['205','60'],petg:['235','80'],abs:['245','100']}[event.target.value];
   $('#nozzle-temp').value=temperatures[0];$('#bed-temp').value=temperatures[1];

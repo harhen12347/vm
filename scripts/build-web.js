@@ -8,16 +8,24 @@ const library = path.join(root, 'node_modules', 'sldprt', 'src');
 fs.rmSync(output, { recursive: true, force: true });
 fs.mkdirSync(path.join(output, 'vendor', 'container'), { recursive: true });
 fs.mkdirSync(path.join(output, 'vendor', 'three'), { recursive: true });
+fs.mkdirSync(path.join(output, 'desktop'), { recursive: true });
 
 for (const [source, destination] of [
-  ['src/slicer.html', 'index.html'],
+  ['src/launcher.html', 'index.html'],
+  ['src/launcher.css', 'launcher.css'],
+  ['src/slicer.html', 'slicer.html'],
   ['src/slicer.css', 'slicer.css'],
   ['src/slicer.js', 'slicer.js'],
+  ['src/printer-database.mjs', 'printer-database.mjs'],
+  ['src/printer-database.json', 'printer-database.json'],
   ['src/slicer-worker.js', 'slicer-worker.js'],
   ['src/cad.html', 'cad.html'],
   ['src/cad.css', 'cad.css'],
   ['src/cad-page.js', 'cad-page.js'],
-  ['src/cad-worker.js', 'cad-worker.js']
+  ['src/cad-worker.js', 'cad-worker.js'],
+  ['src/index.html', 'desktop/index.html'],
+  ['src/styles.css', 'desktop/styles.css'],
+  ['src/renderer.js', 'desktop/renderer.js']
 ]) {
   fs.copyFileSync(path.join(root, source), path.join(output, destination));
 }
@@ -38,5 +46,10 @@ fs.copyFileSync(
   path.join(root, 'node_modules', 'three', 'build', 'three.module.js'),
   path.join(output, 'vendor', 'three', 'three.module.js')
 );
+fs.cpSync(
+  path.join(root, 'node_modules', 'three', 'examples', 'jsm'),
+  path.join(output, 'vendor', 'three', 'addons'),
+  { recursive: true }
+);
 
-console.log(`Built browser 3D slicer in ${path.relative(root, output)}/`);
+console.log(`Built the three-tool website in ${path.relative(root, output)}/`);

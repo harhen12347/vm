@@ -1,50 +1,53 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101522">
-  <meta name="description" content="Convert SolidWorks SLDPRT files to STL in your browser.">
-  <title>SLDPRT to STL Converter</title>
-  <link rel="stylesheet" href="./cad.css">
+  <meta name="theme-color" content="#11151d">
+  <title>Aether Tools</title>
+  <link rel="stylesheet" href="./launcher.css">
 </head>
 <body>
-  <main class="page">
-    <header class="topbar">
-      <a class="brand" href="./" aria-label="SLDPRT to STL Converter home">
-        <span class="brand-mark" aria-hidden="true">◈</span>
-        <span>Part to Mesh</span>
-      </a>
+  <main class="launcher">
+    <header class="site-header">
+      <a class="wordmark" href="./" aria-label="Aether Tools home"><span>A</span>AETHER</a>
+      <span class="status">3 tools available</span>
     </header>
 
-    <section class="converter" aria-labelledby="page-title">
-      <div class="eyebrow"><span aria-hidden="true">✦</span> CAD FILE CONVERTER</div>
-      <h1 id="page-title">SLDPRT to STL</h1>
-      <p class="intro">Convert SolidWorks part files into downloadable STL meshes.</p>
+    <section class="intro" aria-labelledby="launcher-title">
+      <p class="eyebrow">WORKSPACE</p>
+      <h1 id="launcher-title">Choose a tool</h1>
+      <p>Desktop simulation, CAD conversion, and 3D printing in one workspace.</p>
+    </section>
 
-      <label class="dropzone" id="dropzone">
-        <input id="file-input" type="file" accept=".sldprt" multiple>
-        <span class="upload-icon" aria-hidden="true">↑</span>
-        <span class="drop-title">Drop your part files here</span>
-        <span class="drop-caption">or <span class="browse">browse files</span></span>
-        <span class="limits">Up to 50 files · 128 MB per file</span>
-      </label>
+    <section class="tools" aria-label="Available tools">
+      <a class="tool-card desktop-card" href="./desktop/">
+        <span class="tool-mark" aria-hidden="true">D</span>
+        <span class="tool-copy">
+          <b>Aether Desktop</b>
+          <small>Virtual desktop, apps, files, and browser</small>
+        </span>
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
 
-      <div class="actions">
-        <button id="convert-button" type="button" disabled>Convert to STL</button>
-        <span id="progress" role="status" aria-live="polite">Choose one or more .SLDPRT files.</span>
-      </div>
+      <a class="tool-card cad-card" href="./cad.html">
+        <span class="tool-mark" aria-hidden="true">C</span>
+        <span class="tool-copy">
+          <b>CAD Converter</b>
+          <small>Convert SLDPRT parts to STL meshes</small>
+        </span>
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
 
-      <section id="results" class="results" aria-label="Conversion results">
-        <p class="empty">Your selected files and downloads will appear here.</p>
-      </section>
-
-      <p class="privacy">
-        Your files are converted locally in your browser and never uploaded. Some unsupported or damaged
-        parts may not convert.
-      </p>
+      <a class="tool-card slicer-card" href="./slicer.html">
+        <span class="tool-mark" aria-hidden="true">P</span>
+        <span class="tool-copy">
+          <b>Prism 3D Slicer</b>
+          <small>Slice meshes and export profile-gated G-code</small>
+        </span>
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
     </section>
   </main>
-  <script src="./cad-page.js" defer></script>
 </body>
 </html>

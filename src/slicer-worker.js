@@ -172,6 +172,35 @@ function addInfill(loops, z, settings, layerIndex, moves) {
   }
 }
 
+function resolvePrinterGcode(template, settings) {
+  const values={
+    material_bed_temperature:settings.bedTemperature,
+    material_bed_temperature_layer_0:settings.bedTemperature,
+    bed_temperature_initial_layer_single:settings.bedTemperature,
+    material_print_temperature:settings.nozzleTemperature,
+    material_print_temperature_layer_0:settings.nozzleTemperature,
+    material_initial_print_temperature:settings.nozzleTemperature,
+    material_final_print_temperature:settings.nozzleTemperature,
+    nozzle_temperature_initial_layer:settings.nozzleTemperature,
+    layer_height:settings.layerHeight,
+    layer_height_0:settings.layerHeight,
+    machine_nozzle_size:settings.nozzleDiameter,
+    retraction_amount:settings.retraction?.distance,
+    retraction_speed:settings.retraction?.speed,
+    initial_extruder:settings.extruderCount===1?0:undefined,
+    initial_no_support_extruder:settings.extruderCount===1?0:undefined
+  };
+  if(/^\s*(?:START|END)_GCODE\s*$/im.test(template))throw new Error('Printer G-code contains an unexpanded macro.');
+  const unresolved=new Set();
+  const resolved=template.replace(/\{([^}]+)\}|\[([^\]]+)\]/g,(token,curly,square)=>{
+    const name=(curly||square).trim();
+    if(!Object.hasOwn(values,name)||values[name]===undefined){unresolved.add(name);return token;}
+    return String(values[name]);
+  });
+  if(unresolved.size)throw new Error(`Printer G-code contains unsupported placeholders: ${[...unresolved].join(', ')}.`);
+  return resolved.split(/\r?\n/).filter((line)=>line.trim());
+}
+
 self.addEventListener('message', (event) => {
   const requestId=event.data?.requestId;
   const send=(message)=>self.postMessage({...message,requestId});
@@ -191,6 +220,10 @@ self.addEventListener('message', (event) => {
        buildVolume.x<=0 || buildVolume.y<=0 || buildVolume.z<=0) {
       throw new Error('Slicing settings or printer build-volume dimensions are invalid.');
     }
+    if ((settings.maxNozzleTemperature != null && Number.isFinite(settings.maxNozzleTemperature) && settings.nozzleTemperature > settings.maxNozzleTemperature) ||
+      (settings.maxBedTemperature != null && Number.isFinite(settings.maxBedTemperature) && settings.bedTemperature > settings.maxBedTemperature)) {
+      throw new Error('Selected temperature exceeds the printer profile maximum.');
+    }
     let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
     for (const point of triangles) {
       minX=Math.min(minX,point[0]);maxX=Math.max(maxX,point[0]);
@@ -208,20 +241,25 @@ self.addEventListener('message', (event) => {
     const layers=[];
     const filamentRadius=settings.filamentDiameter/2;
     const filamentArea=Math.PI*filamentRadius*filamentRadius;
-    const offsetX=buildVolume.x/2,offsetY=buildVolume.y/2;
+    const offsetX=settings.originAtCenter===true?0:buildVolume.x/2;
+    const offsetY=settings.originAtCenter===true?0:buildVolume.y/2;
     let extrudedVolume=0,extrusionLength=0,printSeconds=0,layerIndex=0,e=0;
     let z=minZ+settings.layerHeight/2;
     const totalLayers=Math.ceil((maxZ-minZ)/settings.layerHeight);
-    const gcode=[
+    const defaultStartGcode=[
       '; Prism Slicer - generated G-code',
       '; UNTESTED - confirm firmware, origin, temperatures, and physical safety',
-      'G21 ; millimetres','G90 ; absolute positioning','M82 ; absolute extrusion',
+      'G21 ; millimetres','G90 ; absolute positioning',
       `M140 S${settings.bedTemperature}`,
       `M104 S${settings.nozzleTemperature}`,
       'G28',
       `M190 S${settings.bedTemperature}`,
       `M109 S${settings.nozzleTemperature}`
     ];
+    const startGcode=typeof settings.startGcode==='string'&&settings.startGcode.trim()
+      ?resolvePrinterGcode(settings.startGcode,settings)
+      :defaultStartGcode;
+    const gcode=[...startGcode,settings.relativeExtrusion===true?'M83 ; relative extrusion':'M82 ; absolute extrusion'];
     let currentX=0,currentY=0,currentZ=0;
     while(z<maxZ-tolerance && layerIndex<totalLayers) {
       const loops=chainSegments(segmentAtZ(triangles,z));
@@ -265,7 +303,7 @@ self.addEventListener('message', (event) => {
           const distance=Math.hypot(x2-x1,y2-y1);
           const volume=distance*settings.lineWidth*settings.layerHeight*(settings.flowRate/100);
           const length=volume/filamentArea;
-          e+=length;extrusionLength+=length;extrudedVolume+=volume;
+          e=length+(settings.relativeExtrusion===true?0:e);extrusionLength+=length;extrudedVolume+=volume;
           printSeconds+=distance/(settings.printSpeed/60);
           gcode.push(`G1 X${x2.toFixed(3)} Y${y2.toFixed(3)} E${e.toFixed(5)} F${Math.round(settings.printSpeed*60)}`);
           currentX=x2;currentY=y2;currentZ=z;
@@ -279,7 +317,11 @@ self.addEventListener('message', (event) => {
       z=minZ+(layerIndex+0.5)*settings.layerHeight;
     }
     if(!layers.some((layer)=>layer.moves.length)) throw new Error('No printable contours were generated. Check that the mesh is closed and correctly oriented.');
-    gcode.push('M104 S0','M140 S0',`G0 X0 Y0 Z${Math.min(buildVolume.z,currentZ+10).toFixed(3)} F600`,'M84');
+    const defaultEndGcode=['M104 S0','M140 S0',`G0 X0 Y0 Z${Math.min(buildVolume.z,currentZ+10).toFixed(3)} F600`,'M84'];
+    const endGcode=typeof settings.endGcode==='string'&&settings.endGcode.trim()
+      ?resolvePrinterGcode(settings.endGcode,settings)
+      :defaultEndGcode;
+    gcode.push(...endGcode);
     send({
       type:'complete',gcode:gcode.join('\n'),layers,
       estimatedMinutes:printSeconds/60,
