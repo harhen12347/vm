@@ -22,6 +22,7 @@ const staticFiles = new Map([
   ['/cad', path.join(__dirname, 'src', 'cad.html')],
   ['/cad.html', path.join(__dirname, 'src', 'cad.html')],
   ['/vendor/three/three.module.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.js')],
+  ['/vendor/three/three.core.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.core.js')],
   ['/desktop', path.join(__dirname, 'src', 'index.html')],
   ['/desktop/', path.join(__dirname, 'src', 'index.html')],
   ['/desktop/styles.css', path.join(__dirname, 'src', 'styles.css')],

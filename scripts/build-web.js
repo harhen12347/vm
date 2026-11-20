@@ -46,6 +46,10 @@ fs.copyFileSync(
   path.join(root, 'node_modules', 'three', 'build', 'three.module.js'),
   path.join(output, 'vendor', 'three', 'three.module.js')
 );
+fs.copyFileSync(
+  path.join(root, 'node_modules', 'three', 'build', 'three.core.js'),
+  path.join(output, 'vendor', 'three', 'three.core.js')
+);
 fs.cpSync(
   path.join(root, 'node_modules', 'three', 'examples', 'jsm'),
   path.join(output, 'vendor', 'three', 'addons'),
