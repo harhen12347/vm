@@ -1,5 +1,7 @@
 import * as THREE from './vendor/three/three.module.js';
+import { CuraWASM } from 'cura-wasm';
 import { availableOutputFormats, OUTPUT_FORMATS, profileErrors, profileWarnings, unsupportedGcodeTokens, validateDatabase } from './printer-database.mjs';
+import { buildCuraOverrides, curaMetadataToStats, parseCuraGcode, trianglesToBinaryStl } from './cura-engine-adapter.mjs';
 import { AMFLoader } from 'three/addons/loaders/AMFLoader.js';
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
@@ -146,7 +148,6 @@ let gcodeResult = null;
 let sliceRequestId = 0;
 let toolpathGroup = new THREE.Group();
 scene.add(toolpathGroup);
-const worker = new Worker('./slicer-worker.js');
 
 function resize() {
   const rect = viewport.getBoundingClientRect();
@@ -298,6 +299,9 @@ function selectObject(item) {
   $('#pos-y').value = item.mesh.position.y.toFixed(1);
   $('#pos-z').value = item.mesh.position.z.toFixed(1);
   $('#scale-value').value=(item.mesh.scale.x*100).toFixed(1);
+  $('#rotate-x').value=THREE.MathUtils.radToDeg(item.mesh.rotation.x).toFixed(1);
+  $('#rotate-y').value=THREE.MathUtils.radToDeg(item.mesh.rotation.y).toFixed(1);
+  $('#rotate-z').value=THREE.MathUtils.radToDeg(item.mesh.rotation.z).toFixed(1);
   setObjectList();
 }
 
@@ -382,8 +386,9 @@ function positionsFromObject(root) {
 }
 
 function placeOnPlate(item) {
-  item.mesh.geometry.computeBoundingBox();
-  item.mesh.position.z = -item.mesh.geometry.boundingBox.min.z;
+  item.mesh.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(item.mesh);
+  item.mesh.position.z -= bounds.min.z;
   $('#pos-z').value = item.mesh.position.z.toFixed(1);
   if (objects.length === 1) return;
   const index = objects.indexOf(item);
@@ -412,10 +417,23 @@ function addSettingEvents() {
     selectedObject.mesh.position[['x','y','z'][axis]] = Number($(`#${id}`).value);
     invalidateSlice();
   }));
+  ['rotate-x','rotate-y','rotate-z'].forEach((id)=>$(`#${id}`).addEventListener('change',()=>{
+    if(!selectedObject)return;
+    selectedObject.mesh.rotation.set(
+      THREE.MathUtils.degToRad(Number($('#rotate-x').value)||0),
+      THREE.MathUtils.degToRad(Number($('#rotate-y').value)||0),
+      THREE.MathUtils.degToRad(Number($('#rotate-z').value)||0)
+    );
+    placeOnPlate(selectedObject);
+    syncTransformInputs();
+    invalidateSlice();
+  }));
   $('#scale-value').addEventListener('change', () => {
     if (!selectedObject) return;
     const scale = Number($('#scale-value').value) / 100;
     selectedObject.mesh.scale.set(scale, scale, scale);
+    placeOnPlate(selectedObject);
+    syncTransformInputs();
     invalidateSlice();
   });
   $('#center-object').addEventListener('click', () => {
@@ -489,7 +507,7 @@ for(const button of $$('[data-menu]')){
       case 'view': $('[data-view="perspective"]').click(); break;
       case 'printer': $('[data-tab="printer"]').click(); break;
       case 'settings': $('[data-tab="print"]').click(); break;
-      case 'help': showStatus('STL/OBJ import and generic G-code export. Printer profiles are not validated.'); break;
+      case 'help': showStatus('CuraEngine-generated G-code is not physically validated; verify it for your exact printer before use.'); break;
       default: showStatus(`Menu action "${button.dataset.menu}" is unavailable.`,true);
     }
   });
@@ -518,7 +536,56 @@ function collectMeshTriangles() {
   return triangles;
 }
 
-$('#slice-button').addEventListener('click', () => {
+function ensureModelFitsBuildVolume(triangles, profile) {
+  const bounds = { minX:Infinity, minY:Infinity, minZ:Infinity, maxX:-Infinity, maxY:-Infinity, maxZ:-Infinity };
+  for (const [x,y,z] of triangles) {
+    bounds.minX=Math.min(bounds.minX,x);bounds.maxX=Math.max(bounds.maxX,x);
+    bounds.minY=Math.min(bounds.minY,y);bounds.maxY=Math.max(bounds.maxY,y);
+    bounds.minZ=Math.min(bounds.minZ,z);bounds.maxZ=Math.max(bounds.maxZ,z);
+  }
+  const tolerance=0.01;
+  if(bounds.minX < -profile.x/2-tolerance || bounds.maxX > profile.x/2+tolerance ||
+     bounds.minY < -profile.y/2-tolerance || bounds.maxY > profile.y/2+tolerance ||
+     bounds.minZ < -tolerance || bounds.maxZ > profile.z+tolerance){
+    throw new Error(`Model is outside the ${profile.x} × ${profile.y} × ${profile.z} mm build volume.`);
+  }
+}
+
+function filamentDensity() {
+  return {pla:1.24,petg:1.27,abs:1.04}[$('#filament-profile').value]||1.24;
+}
+
+function updateSliceResult(result) {
+  gcodeResult=result;
+  $('.bottom-panel .slice-status').classList.remove('slicing');
+  $('#status-text').textContent='Slice complete';
+  const minutes=result.estimatedMinutes;
+  if(Number.isFinite(minutes)&&minutes>0){
+    const hours=Math.floor(minutes/60),remaining=Math.round(minutes%60);
+    $('#print-time').textContent=hours?`${hours}h ${remaining}m`:`${remaining}m`;
+  }else $('#print-time').textContent='--';
+  $('#filament-use').textContent=Number.isFinite(result.filamentMm)
+    ?`${result.filamentMm.toFixed(1)} mm · ${result.filamentGrams.toFixed(1)} g`:'--';
+  $('#layer-count').textContent=result.layers.length;
+  $('#export-button').disabled=!availableOutputFormats(printerProfile).includes($('#output-format').value);
+  $('#layer-slider').max=Math.max(0,result.layers.length-1);
+  $('#layer-slider').value=String(result.layers.length-1);
+  renderToolpaths(result.layers.length-1);
+}
+
+const expectedCuraFlavors={
+  'RepRap (Marlin/Sprinter)':'Marlin',
+  'RepRap (Volumetric)':'Marlin (Volumetric)',
+  'RepRap (RepRap)':'RepRap',
+  UltiGCode:'Ultimaker 2',
+  Griffin:'Griffin',
+  Makerbot:'Makerbot',
+  BFB:'Bits from Bytes',
+  MACH3:'Mach3',
+  Repetier:'Repetier'
+};
+
+$('#slice-button').addEventListener('click', async () => {
   if (!objects.length) return showStatus('Import a model before slicing.', true);
   if (![printerProfile.x,printerProfile.y,printerProfile.z,printerProfile.filamentDiameter]
     .every((value)=>Number.isFinite(Number(value))&&Number(value)>0)){
@@ -530,6 +597,12 @@ $('#slice-button').addEventListener('click', () => {
   if(typeof printerProfile.originAtCenter!=='boolean'){
     return showStatus('This printer profile does not specify its coordinate origin.',true);
   }
+  if(printerProfile.extruderCount!==1){
+    return showStatus('The current CuraEngine integration supports single-extruder printers only.',true);
+  }
+  if(['circular','custom'].includes(printerProfile.buildPlateShape)){
+    return showStatus('The current CuraEngine integration supports rectangular build plates only.',true);
+  }
   const selectedNozzle=Number($('#nozzle-diameter').value);
   if(!printerProfile.nozzleDiameters.some((diameter)=>Math.abs(Number(diameter)-selectedNozzle)<0.0001)){
     return showStatus('Selected nozzle diameter is not listed by this printer profile.',true);
@@ -537,19 +610,33 @@ $('#slice-button').addEventListener('click', () => {
   if(!availableOutputFormats(printerProfile).length){
     return showStatus('This printer profile has no output format supported by the current exporter.',true);
   }
+  if(printerProfile.firmwareType&&!Object.hasOwn(expectedCuraFlavors,printerProfile.firmwareType)){
+    return showStatus(`CuraEngine does not support the ${printerProfile.firmwareType} firmware flavor.`,true);
+  }
+  if(printerProfile.manufacturer!=='Custom'&&!printerProfile.firmwareType){
+    return showStatus('This printer profile does not specify a firmware flavor.',true);
+  }
+  if(printerProfile.manufacturer!=='Custom'&&(!printerProfile.startGcode?.trim()||!printerProfile.endGcode?.trim())){
+    return showStatus('This printer profile is missing required start or end G-code.',true);
+  }
+  if(Number($('#bed-temp').value)>0&&printerProfile.heatedBed!==true){
+    return showStatus('This profile does not confirm a heated bed. Set bed temperature to 0 or complete the printer profile.',true);
+  }
   sliceRequestId++;
   const requestId=sliceRequestId;
   gcodeResult = null;
   $('#export-button').disabled = true;
   $('.bottom-panel .slice-status').classList.add('slicing');
-  $('#status-text').textContent = 'Slicing in worker...';
+  $('#status-text').textContent = 'Preparing CuraEngine...';
   const settings = {
     layerHeight:Number($('#layer-height').value), lineWidth:Number($('#line-width').value),
     wallCount:Number($('#wall-count').value), infillDensity:Number($('#infill-density').value),
+    solidLayerCount:Number($('#solid-layer-count').value),
     infillPattern:$('#infill-pattern').value,
     adhesion:$('#adhesion').value, nozzleTemperature:Number($('#nozzle-temp').value),
     bedTemperature:Number($('#bed-temp').value), printSpeed:Number($('#print-speed').value),
     flowRate:Number($('#flow-rate').value), filamentDiameter:printerProfile.filamentDiameter,
+    supports:$('#supports').checked,
     nozzleDiameter:selectedNozzle,
     maxNozzleTemperature:printerProfile.maxNozzleTemperature,
     maxBedTemperature:printerProfile.maxBedTemperature,
@@ -561,34 +648,50 @@ $('#slice-button').addEventListener('click', () => {
     endGcode:printerProfile.endGcode,
     buildVolume:{x:printerProfile.x,y:printerProfile.y,z:printerProfile.z}
   };
+  if(settings.maxNozzleTemperature!=null&&settings.nozzleTemperature>settings.maxNozzleTemperature){
+    return showStatus('Selected nozzle temperature exceeds the printer profile maximum.',true);
+  }
+  if(settings.maxBedTemperature!=null&&settings.bedTemperature>settings.maxBedTemperature){
+    return showStatus('Selected bed temperature exceeds the printer profile maximum.',true);
+  }
   scene.updateMatrixWorld(true);
+  const triangles=collectMeshTriangles();
+  let engine;
   try{
-    worker.postMessage({type:'slice', requestId, triangles:collectMeshTriangles(), settings});
+    ensureModelFitsBuildVolume(triangles,printerProfile);
+    if(settings.lineWidth>selectedNozzle*2||settings.layerHeight>selectedNozzle){
+      throw new Error('Layer height or line width is incompatible with the selected nozzle diameter.');
+    }
+    engine=new CuraWASM({overrides:buildCuraOverrides(printerProfile,settings),transfer:true,verbose:false});
+    engine.on('progress',(percent)=>{
+      if(requestId===sliceRequestId)$('#status-text').textContent=`CuraEngine ${percent}%`;
+    });
+    const stl=trianglesToBinaryStl(triangles);
+    const {gcode,metadata}=await engine.slice(stl,'stl');
+    if(requestId!==sliceRequestId)return;
+    const gcodeText=new TextDecoder().decode(gcode);
+    const layers=parseCuraGcode(gcodeText,printerProfile);
+    const expectedFlavor=expectedCuraFlavors[printerProfile.firmwareType||'RepRap (Marlin/Sprinter)'];
+    if(metadata?.flavor&&metadata.flavor!==expectedFlavor){
+      throw new Error(`CuraEngine generated ${metadata.flavor} G-code, but the selected profile requires ${expectedFlavor}.`);
+    }
+    for(const template of [printerProfile.startGcode,printerProfile.endGcode]){
+      const firstCommand=template?.split(/\r?\n/).map((line)=>line.trim()).find((line)=>line&&!line.startsWith(';'));
+      if(firstCommand&&!gcodeText.includes(firstCommand))throw new Error('CuraEngine output is missing a required printer-specific G-code command.');
+    }
+    updateSliceResult({
+      gcode:gcodeText,
+      layers,
+      ...curaMetadataToStats(metadata,printerProfile.filamentDiameter,filamentDensity())
+    });
   }catch(error){
-    showStatus(`Unable to send model to slicer: ${error.message}`,true);
+    if(requestId===sliceRequestId)showStatus(`CuraEngine failed: ${error.message}`,true);
+  }finally{
+    if(engine){
+      try{await engine.destroy();}catch{}
+    }
   }
 });
-
-worker.addEventListener('message',(event)=>{
-  const data=event.data;
-  if(data.requestId!==sliceRequestId)return;
-  if(data.type==='progress'){
-    $('#status-text').textContent=`Slicing layer ${data.layer} of ${data.total}`;
-    return;
-  }
-  if(data.type==='error'){showStatus(data.message,true);return;}
-  gcodeResult=data;
-  $('.bottom-panel .slice-status').classList.remove('slicing');
-  $('#status-text').textContent='Slice complete';
-  $('#print-time').textContent=data.estimatedMinutes ? `${Math.floor(data.estimatedMinutes/60)}h ${Math.round(data.estimatedMinutes%60)}m`:'--';
-  $('#filament-use').textContent=`${data.filamentMm.toFixed(1)} mm · ${data.filamentGrams.toFixed(1)} g`;
-  $('#layer-count').textContent=data.layers.length;
-  $('#export-button').disabled=!availableOutputFormats(printerProfile).includes($('#output-format').value);
-  $('#layer-slider').max=Math.max(0,data.layers.length-1);
-  $('#layer-slider').value=String(data.layers.length-1);
-  renderToolpaths(data.layers.length-1);
-});
-worker.addEventListener('error',(event)=>showStatus(`Slicer worker failed: ${event.message}`,true));
 
 function renderToolpaths(layerIndex) {
   scene.remove(toolpathGroup);
@@ -628,7 +731,8 @@ $('#export-button').addEventListener('click',()=>{
 
 $('#save-project').addEventListener('click',()=>{
   const project={version:1,printer:$('#printer-profile').value,filament:$('#filament-profile').value,objects:objects.map((item)=>({
-    name:item.name,position:item.mesh.position.toArray(),scale:item.mesh.scale.toArray(),positions:item.positions
+    name:item.name,position:item.mesh.position.toArray(),scale:item.mesh.scale.toArray(),
+    rotation:[item.mesh.rotation.x,item.mesh.rotation.y,item.mesh.rotation.z],positions:item.positions
   })),settings:{
     layerHeight:$('#layer-height').value,infillDensity:$('#infill-density').value,infillPattern:$('#infill-pattern').value,
     supports:$('#supports').checked,adhesion:$('#adhesion').value
@@ -660,6 +764,7 @@ $('#project-file').addEventListener('change',async(event)=>{
       );
       mesh.position.fromArray(entry.position);
       mesh.scale.fromArray(entry.scale);
+      mesh.rotation.fromArray(entry.rotation||[0,0,0]);
       return {name:String(entry.name||'Imported model'),mesh,positions:entry.positions};
     });
     objects.forEach((item)=>{scene.remove(item.mesh);item.mesh.geometry.dispose();item.mesh.material.dispose();});
@@ -737,6 +842,7 @@ function applyPrinterProfile() {
   nozzleSelect.replaceChildren(...printerProfile.nozzleDiameters.map((diameter)=>new Option(`${diameter} mm`,String(diameter))));
   nozzleSelect.disabled=!printerProfile.nozzleDiameters.length;
   if(printerProfile.nozzleDiameters.length)nozzleSelect.value=String(printerProfile.nozzle);
+  if(printerProfile.heatedBed!==true)$('#bed-temp').value=0;
   $('#profile-name').value=printerProfile.model;
   $('#profile-manufacturer').value=printerProfile.manufacturer;
   $('#profile-filament-diameter').value=printerProfile.filamentDiameter??'';

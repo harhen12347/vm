@@ -13,13 +13,14 @@
     "publish:web": "npm run build:web && node scripts/publish-web.js",
     "import:cura-printers": "node scripts/import-cura-printers.js",
     "import:flashforge-printers": "node scripts/import-flashforge-printers.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check src/printer-database.mjs && node --check scripts/import-cura-printers.js && node --check scripts/import-flashforge-printers.js && node --check scripts/build-web.js && node --check scripts/publish-web.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check src/printer-database.mjs && node --check src/cura-engine-adapter.mjs && node --check scripts/import-cura-printers.js && node --check scripts/import-flashforge-printers.js && node --check scripts/build-web.js && node --check scripts/publish-web.js",
     "test": "node --test"
   },
   "devDependencies": {
     "electron": "^45.4.1"
   },
   "dependencies": {
+    "@toybox-labs/cura-wasm": "^1.5.4",
     "sldprt": "https://codeload.github.com/blussyya/solidworks-converters/tar.gz/b0568c01ae28ccfe9ac90f5bdf4a580a36b2a51d",
     "three": "^0.187.0"
   }

@@ -158,7 +158,7 @@ function addScanLines(polygons, z, spacing, angle, moves) {
 
 function addInfill(loops, z, settings, layerIndex, moves) {
   if (!loops.length || settings.infillDensity <= 0) return;
-  const spacing = Math.max(settings.lineWidth * 2, settings.lineWidth * (100 / settings.infillDensity));
+  const spacing = Math.max(settings.lineWidth, settings.lineWidth * (100 / settings.infillDensity));
   if (settings.infillPattern === 'Lines') {
     addScanLines(loops,z,spacing,(layerIndex%2)*Math.PI/2,moves);
   } else if (settings.infillPattern === 'Triangles') {
@@ -220,6 +220,13 @@ self.addEventListener('message', (event) => {
        buildVolume.x<=0 || buildVolume.y<=0 || buildVolume.z<=0) {
       throw new Error('Slicing settings or printer build-volume dimensions are invalid.');
     }
+    if(settings.nozzleDiameter!=null && (settings.lineWidth>settings.nozzleDiameter*2 || settings.layerHeight>settings.nozzleDiameter)){
+      throw new Error('Layer height or line width is incompatible with the selected nozzle diameter.');
+    }
+    const solidLayerCount=settings.solidLayerCount==null?3:settings.solidLayerCount;
+    if(!Number.isInteger(solidLayerCount)||solidLayerCount<0||solidLayerCount>20){
+      throw new Error('Top and bottom solid layer count must be between 0 and 20.');
+    }
     if ((settings.maxNozzleTemperature != null && Number.isFinite(settings.maxNozzleTemperature) && settings.nozzleTemperature > settings.maxNozzleTemperature) ||
       (settings.maxBedTemperature != null && Number.isFinite(settings.maxBedTemperature) && settings.bedTemperature > settings.maxBedTemperature)) {
       throw new Error('Selected temperature exceeds the printer profile maximum.');
@@ -244,6 +251,9 @@ self.addEventListener('message', (event) => {
     const offsetX=settings.originAtCenter===true?0:buildVolume.x/2;
     const offsetY=settings.originAtCenter===true?0:buildVolume.y/2;
     let extrudedVolume=0,extrusionLength=0,printSeconds=0,layerIndex=0,e=0;
+    let hasExtruded=false,isRetracted=false;
+    const retractDistance=Number(settings.retraction?.distance)||0;
+    const retractSpeed=(Number(settings.retraction?.speed)||settings.printSpeed)*60;
     let z=minZ+settings.layerHeight/2;
     const totalLayers=Math.ceil((maxZ-minZ)/settings.layerHeight);
     const defaultStartGcode=[
@@ -285,28 +295,41 @@ self.addEventListener('message', (event) => {
           }
         }
       }
-      addInfill(fillLoops,z,settings,layerIndex,moves);
+      const solidLayer=layerIndex<solidLayerCount||layerIndex>=totalLayers-solidLayerCount;
+      const infillSettings=solidLayer?{...settings,infillDensity:100,infillPattern:layerIndex%2?'Lines':'Grid'}:settings;
+      addInfill(fillLoops,z,infillSettings,layerIndex,moves);
       if(moves.length){
         for(const move of moves){
           const x1=move.x1+offsetX,y1=move.y1+offsetY;
           const x2=move.x2+offsetX,y2=move.y2+offsetY;
           const travel=Math.hypot(x1-currentX,y1-currentY);
           if(travel>0.01){
+            if(hasExtruded&&!isRetracted&&retractDistance>0&&travel>=(Number(settings.retraction?.minimumTravel)||1)){
+              e-=settings.relativeExtrusion===true?0:retractDistance;
+              gcode.push(`G1 E${(settings.relativeExtrusion===true?-retractDistance:e).toFixed(5)} F${Math.round(retractSpeed)}`);
+              isRetracted=true;
+            }
             gcode.push(`G0 X${x1.toFixed(3)} Y${y1.toFixed(3)} Z${z.toFixed(3)} F${Math.round(settings.printSpeed*60*2)}`);
-            printSeconds+=travel/(settings.printSpeed*2/60);
+            printSeconds+=travel/(settings.printSpeed*2);
             travelMoves.push({
               kind:'travel',
               x1:currentX-offsetX,y1:currentY-offsetY,
               x2:move.x1,y2:move.y1,z
             });
           }
+          if(isRetracted){
+            e+=settings.relativeExtrusion===true?0:retractDistance;
+            gcode.push(`G1 E${(settings.relativeExtrusion===true?retractDistance:e).toFixed(5)} F${Math.round(retractSpeed)}`);
+            isRetracted=false;
+          }
           const distance=Math.hypot(x2-x1,y2-y1);
           const volume=distance*settings.lineWidth*settings.layerHeight*(settings.flowRate/100);
           const length=volume/filamentArea;
           e=length+(settings.relativeExtrusion===true?0:e);extrusionLength+=length;extrudedVolume+=volume;
-          printSeconds+=distance/(settings.printSpeed/60);
+          printSeconds+=distance/settings.printSpeed;
           gcode.push(`G1 X${x2.toFixed(3)} Y${y2.toFixed(3)} E${e.toFixed(5)} F${Math.round(settings.printSpeed*60)}`);
           currentX=x2;currentY=y2;currentZ=z;
+          hasExtruded=true;
         }
       }
       layers.push({z,moves:[...travelMoves,...moves]});

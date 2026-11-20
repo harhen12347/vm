@@ -4,7 +4,7 @@ const { execFileSync } = require('node:child_process');
 
 const root = path.join(__dirname, '..');
 const databasePath = path.join(root, 'src', 'printer-database.json');
-const reservedDefinitionKeys = new Set(['version', 'name', 'inherits', 'metadata', 'overrides']);
+const reservedDefinitionKeys = new Set(['version', 'name', 'inherits', 'metadata', 'settings', 'overrides']);
 
 function readDefinitions(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -21,6 +21,18 @@ function mergeSettings(target, source) {
   }
 }
 
+function flattenSettingTree(tree, target = {}) {
+  for (const [key, value] of Object.entries(tree || {})) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    if (value.children && typeof value.children === 'object') {
+      flattenSettingTree(value.children, target);
+    } else if (['default_value', 'value', 'maximum_value', 'minimum_value'].some((field) => Object.hasOwn(value, field))) {
+      target[key] = { ...(target[key] || {}), ...value };
+    }
+  }
+  return target;
+}
+
 function resolveDefinitions(definitions) {
   const byId = new Map(definitions.map((entry) => [entry.id, entry.value]));
   const resolved = new Map();
@@ -35,6 +47,7 @@ function resolveDefinitions(definitions) {
       : { metadata: {}, settings: {} };
     const metadata = { ...parent.metadata, ...(definition.metadata || {}) };
     const settings = { ...parent.settings };
+    mergeSettings(settings, flattenSettingTree(definition.settings));
     const directSettings = Object.fromEntries(Object.entries(definition)
       .filter(([key, value]) => !reservedDefinitionKeys.has(key) && value && typeof value === 'object' && !Array.isArray(value)));
     mergeSettings(settings, directSettings);
@@ -52,10 +65,20 @@ function literal(value) {
   const text = value.trim();
   if (/^-?(?:\d+\.?\d*|\.\d+)$/.test(text)) return Number(text);
   if (/^(true|false)$/i.test(text)) return text.toLowerCase() === 'true';
-  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+  if (text.startsWith('"') && text.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed === 'string') return parsed;
+    } catch {}
+    return null;
+  }
+  if (/^'[^'\n]*'$/.test(text)) {
     return text.slice(1, -1);
   }
-  return null;
+  if (/\s+if\s+.+\s+else\s+/s.test(text) ||
+      /^[\w.]+\s*(?:[+*/-]\s*[\w.]+)+$/.test(text) ||
+      /^(?:math\.)?\w+\(/.test(text)) return null;
+  return value;
 }
 
 function settingValue(settings, key, field = 'default_value') {
@@ -176,4 +199,4 @@ if (require.main === module) {
   console.log(`Imported ${database.profiles.filter((profile) => profile.source?.kind === 'cura-definition').length} visible Cura printer definitions from ${database.databaseVersion}.`);
 }
 
-module.exports = { buildDatabase, literal, outputFormats, printerSeries, profileFromDefinition, resolveDefinitions };
+module.exports = { buildDatabase, flattenSettingTree, literal, outputFormats, printerSeries, profileFromDefinition, resolveDefinitions };

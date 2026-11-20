@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const database = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'printer-database.json'), 'utf8'));
 const { availableOutputFormats, profileErrors, profileWarnings, unsupportedGcodeTokens, validateDatabase } = require('../src/printer-database.mjs');
-const { literal, printerSeries, profileFromDefinition, resolveDefinitions } = require('../scripts/import-cura-printers');
+const { flattenSettingTree, literal, printerSeries, profileFromDefinition, resolveDefinitions } = require('../scripts/import-cura-printers');
 const { profileFromModel } = require('../scripts/import-flashforge-printers');
 
 test('bundled printer database validates and keeps its geometry-only templates untested', () => {
@@ -34,12 +34,15 @@ test('rejects duplicate profile ids in a database', () => {
 
 test('resolves inherited Cura machine and extruder settings without evaluating expressions', () => {
   const definitions = [
-    { id: 'fdmprinter', value: { overrides: {
-      machine_width: { default_value: 100 }, machine_depth: { default_value: 90 },
-      machine_height: { default_value: 70 }, machine_heated_bed: { default_value: true },
-      machine_extruder_count: { default_value: 1 }, machine_center_is_zero: { default_value: true },
-      material_bed_temperature: { maximum_value: 100 }
-    } } },
+    { id: 'fdmprinter', value: {
+      settings: { machine: { children: {
+        machine_width: { default_value: 100 }, machine_depth: { default_value: 90 },
+        machine_height: { default_value: 70 }, machine_heated_bed: { default_value: true },
+        machine_extruder_count: { default_value: 1 }, machine_center_is_zero: { default_value: true },
+        machine_gcode_flavor: { default_value: 'RepRap (Marlin/Sprinter)' },
+        material_bed_temperature: { maximum_value: 100 }
+      } } }
+    } },
     { id: 'fdmextruder', value: { overrides: {
       machine_nozzle_size: { default_value: 0.4 }, material_diameter: { default_value: 1.75 },
       material_print_temperature: { maximum_value: 260 }
@@ -61,11 +64,16 @@ test('resolves inherited Cura machine and extruder settings without evaluating e
   assert.equal(printer.extruderCount, 1);
   assert.equal(printer.originAtCenter, true);
   assert.equal(printer.relativeExtrusion, null);
+  assert.equal(printer.firmwareType, 'RepRap (Marlin/Sprinter)');
   assert.deepEqual(printer.outputFormats, ['gcode', 'ufp']);
   assert.equal(printer.tested, false);
   assert.match(printer.source.url, /fixture-commit/);
   assert.equal(printerSeries('Flashforge', 'Adventurer 3'), 'Adventurer');
   assert.equal(literal('machine_width / 2'), null);
+  assert.equal(literal('"G28\\nG1 X0"'), 'G28\nG1 X0');
+  assert.equal(literal('"G28" if firmware == "A" else "G29"'), null);
+  assert.equal(literal('G28 ; home'), 'G28 ; home');
+  assert.equal(flattenSettingTree({ section: { children: { speed: { default_value: 40 } } } }).speed.default_value, 40);
 });
 
 test('builds FlashForge profiles from vendor model and machine data', () => {
@@ -99,4 +107,24 @@ test('does not advertise a printer output when machine G-code contains unknown p
   };
   assert.deepEqual(unsupportedGcodeTokens(profile), ['pressure_advance']);
   assert.deepEqual(availableOutputFormats(profile), []);
+});
+
+test('does not advertise printer output with unresolved Cura conditional G-code', () => {
+  const profile = {
+    ...database.profiles[0],
+    startGcode: '"G28" if firmware == "A" else "G29"'
+  };
+  assert.ok(unsupportedGcodeTokens(profile).includes('unresolved Cura setting expression'));
+  assert.deepEqual(availableOutputFormats(profile), []);
+});
+
+test('does not advertise Cura output for an unsupported FlashForge Klipper profile', () => {
+  const profile = database.profiles.find((entry) => entry.id === 'flashforge-flashforge-adventurer-5m');
+  assert.ok(profile);
+  assert.deepEqual(availableOutputFormats(profile), []);
+});
+
+test('keeps G-code available for the explicit generic template while warning that it is untested', () => {
+  assert.deepEqual(availableOutputFormats(database.profiles[0]), ['gcode']);
+  assert.ok(profileWarnings(database.profiles[0]).some((warning) => warning.includes('not been tested')));
 });

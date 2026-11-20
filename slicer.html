@@ -7,7 +7,7 @@
   <title>Prism Slicer</title>
   <link rel="stylesheet" href="./slicer.css">
   <script type="importmap">
-    {"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}
+    {"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/","cura-wasm":"./vendor/cura-wasm/es.js"}}
   </script>
 </head>
 <body>
@@ -44,6 +44,9 @@
         <label>Y <input id="pos-y" type="number" value="0" step="1"></label>
         <label>Z <input id="pos-z" type="number" value="0" step="1"></label>
         <label>Scale % <input id="scale-value" type="number" value="100" min="1" max="1000"></label>
+        <label>Rotate X° <input id="rotate-x" type="number" value="0" min="-360" max="360" step="5"></label>
+        <label>Rotate Y° <input id="rotate-y" type="number" value="0" min="-360" max="360" step="5"></label>
+        <label>Rotate Z° <input id="rotate-z" type="number" value="0" min="-360" max="360" step="5"></label>
         <div class="transform-actions">
           <button id="center-object">Center</button><button id="plate-object">Place on plate</button>
         </div>
@@ -75,14 +78,15 @@
           <label>Layer height <input id="layer-height" type="number" value="0.16" min="0.04" max="1" step="0.01"></label>
           <label>Line width <input id="line-width" type="number" value="0.44" min="0.1" max="2" step="0.01"></label>
           <label>Wall count <input id="wall-count" type="number" value="3" min="1" max="10"></label>
+          <label>Top / bottom layers <input id="solid-layer-count" type="number" value="3" min="0" max="20"></label>
           <label>Infill <input id="infill-density" type="number" value="20" min="0" max="100"></label>
         </div>
         <label>Infill pattern
           <select id="infill-pattern"><option>Grid</option><option>Lines</option><option>Triangles</option></select>
         </label>
-        <label class="check"><input id="supports" type="checkbox" disabled> Generate supports (not yet available)</label>
+        <label class="check"><input id="supports" type="checkbox"> Generate supports</label>
         <label>Adhesion
-          <select id="adhesion"><option value="none">None</option></select>
+          <select id="adhesion"><option value="none">None</option><option value="skirt">Skirt</option><option value="brim">Brim</option><option value="raft">Raft</option></select>
         </label>
         <div class="section-title">Temperature</div>
         <div class="setting-grid">

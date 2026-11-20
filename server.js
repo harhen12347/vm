@@ -17,12 +17,14 @@ const staticFiles = new Map([
   ['/slicer.css', path.join(__dirname, 'src', 'slicer.css')],
   ['/slicer.js', path.join(__dirname, 'src', 'slicer.js')],
   ['/printer-database.mjs', path.join(__dirname, 'src', 'printer-database.mjs')],
+  ['/cura-engine-adapter.mjs', path.join(__dirname, 'src', 'cura-engine-adapter.mjs')],
   ['/printer-database.json', path.join(__dirname, 'src', 'printer-database.json')],
   ['/slicer-worker.js', path.join(__dirname, 'src', 'slicer-worker.js')],
   ['/cad', path.join(__dirname, 'src', 'cad.html')],
   ['/cad.html', path.join(__dirname, 'src', 'cad.html')],
   ['/vendor/three/three.module.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.js')],
   ['/vendor/three/three.core.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.core.js')],
+  ['/vendor/cura-wasm/es.js', path.join(__dirname, 'node_modules', '@toybox-labs', 'cura-wasm', 'dist', 'es.js')],
   ['/desktop', path.join(__dirname, 'src', 'index.html')],
   ['/desktop/', path.join(__dirname, 'src', 'index.html')],
   ['/desktop/styles.css', path.join(__dirname, 'src', 'styles.css')],
@@ -159,11 +161,13 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     const content = await fs.readFile(filePath);
+    const isSlicerRoute = requestUrl.pathname.startsWith('/slicer');
+    const scriptPolicy = isSlicerRoute ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'";
     response.writeHead(200, {
       'Content-Type': mimeTypes[path.extname(filePath)] || 'application/octet-stream',
       'Cache-Control': 'no-cache',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'self' https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src https: http:; object-src 'none'; base-uri 'self';"
+      'Content-Security-Policy': `default-src 'self' https:; ${scriptPolicy}; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src https: http:; object-src 'none'; base-uri 'self';`
     });
     response.end(content);
   } catch (error) {

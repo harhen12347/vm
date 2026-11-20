@@ -8,6 +8,7 @@ const library = path.join(root, 'node_modules', 'sldprt', 'src');
 fs.rmSync(output, { recursive: true, force: true });
 fs.mkdirSync(path.join(output, 'vendor', 'container'), { recursive: true });
 fs.mkdirSync(path.join(output, 'vendor', 'three'), { recursive: true });
+fs.mkdirSync(path.join(output, 'vendor', 'cura-wasm'), { recursive: true });
 fs.mkdirSync(path.join(output, 'desktop'), { recursive: true });
 
 for (const [source, destination] of [
@@ -17,6 +18,7 @@ for (const [source, destination] of [
   ['src/slicer.css', 'slicer.css'],
   ['src/slicer.js', 'slicer.js'],
   ['src/printer-database.mjs', 'printer-database.mjs'],
+  ['src/cura-engine-adapter.mjs', 'cura-engine-adapter.mjs'],
   ['src/printer-database.json', 'printer-database.json'],
   ['src/slicer-worker.js', 'slicer-worker.js'],
   ['src/cad.html', 'cad.html'],
@@ -49,6 +51,14 @@ fs.copyFileSync(
 fs.copyFileSync(
   path.join(root, 'node_modules', 'three', 'build', 'three.core.js'),
   path.join(output, 'vendor', 'three', 'three.core.js')
+);
+fs.copyFileSync(
+  path.join(root, 'node_modules', '@toybox-labs', 'cura-wasm', 'dist', 'es.js'),
+  path.join(output, 'vendor', 'cura-wasm', 'es.js')
+);
+fs.copyFileSync(
+  path.join(root, 'node_modules', '@toybox-labs', 'cura-wasm', 'LICENSE'),
+  path.join(output, 'vendor', 'cura-wasm', 'LICENSE')
 );
 fs.cpSync(
   path.join(root, 'node_modules', 'three', 'examples', 'jsm'),

@@ -11,6 +11,11 @@ export const OUTPUT_FORMATS = Object.freeze({
   prism: { label: 'Prism project', extension: 'prism', kind: 'project', exporter: true }
 });
 
+const CURA_ENGINE_FLAVORS = new Set([
+  'RepRap (Marlin/Sprinter)', 'RepRap (Volumetric)', 'RepRap (RepRap)',
+  'UltiGCode', 'Griffin', 'Makerbot', 'BFB', 'MACH3', 'Repetier'
+]);
+
 export function profileErrors(profile) {
   const errors = [];
   if (!profile || typeof profile !== 'object') return ['Profile must be an object.'];
@@ -84,6 +89,7 @@ export function unsupportedGcodeTokens(profile) {
   for (const code of [profile.startGcode, profile.endGcode]) {
     if (typeof code !== 'string') continue;
     if (/^\s*(?:START|END)_GCODE\s*$/im.test(code)) tokens.add('unexpanded G-code macro');
+    if (/\s+if\s+.+\s+else\s+/s.test(code)) tokens.add('unresolved Cura setting expression');
     for (const match of code.matchAll(/\{([^}]+)\}|\[([^\]]+)\]/g)) {
       const token = (match[1] || match[2]).trim();
       if (!supported.has(token) && !(profile.extruderCount === 1 && ['initial_extruder', 'initial_no_support_extruder'].includes(token))) {
@@ -95,7 +101,14 @@ export function unsupportedGcodeTokens(profile) {
 }
 
 export function availableOutputFormats(profile) {
-  if (unsupportedGcodeTokens(profile).length || typeof profile.relativeExtrusion !== 'boolean') return [];
+  if (!profile || unsupportedGcodeTokens(profile).length || typeof profile.relativeExtrusion !== 'boolean' ||
+      typeof profile.originAtCenter !== 'boolean' || Number(profile.extruderCount) !== 1 ||
+      !Array.isArray(profile.nozzleDiameters) || !profile.nozzleDiameters.length ||
+      !Number.isFinite(Number(profile.filamentDiameter)) || Number(profile.filamentDiameter) <= 0 ||
+      ['x', 'y', 'z'].some((axis) => !Number.isFinite(Number(profile.buildVolume?.[axis])) || Number(profile.buildVolume[axis]) <= 0)) return [];
+  if (profile.manufacturer !== 'Custom' &&
+      (!CURA_ENGINE_FLAVORS.has(profile.firmwareType) || profile.buildPlateShape !== 'rectangular' ||
+       !profile.startGcode?.trim() || !profile.endGcode?.trim())) return [];
   return (profile.outputFormats || []).filter((id) =>
     OUTPUT_FORMATS[id]?.kind === 'machine' && OUTPUT_FORMATS[id].exporter);
 }

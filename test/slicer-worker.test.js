@@ -96,3 +96,28 @@ test('emits incremental extrusion values for relative-extrusion printers', () =>
   assert.ok(extrusionValues.length > 1);
   assert.ok(extrusionValues.every((value) => value < 100));
 });
+
+test('estimates a small cube in minutes rather than multiplying time by sixty', () => {
+  const result = runWorker(cubeTriangles(10, 6), { printSpeed: 50, infillDensity: 20 });
+  assert.equal(result.type, 'complete');
+  assert.ok(result.estimatedMinutes > 0);
+  assert.ok(result.estimatedMinutes < 10, `expected under 10 minutes, got ${result.estimatedMinutes}`);
+});
+
+test('adds solid infill to top and bottom layers when sparse infill is disabled', () => {
+  const result = runWorker(cubeTriangles(10, 6), { infillDensity: 0, solidLayerCount: 2 });
+  assert.equal(result.type, 'complete');
+  assert.ok(result.layers[0].moves.some((move) => move.kind === 'infill'));
+  assert.ok(result.layers.at(-1).moves.some((move) => move.kind === 'infill'));
+});
+
+test('applies profile retraction on travel moves for absolute and relative extrusion', () => {
+  for (const relativeExtrusion of [false, true]) {
+    const result = runWorker(cubeTriangles(), {
+      relativeExtrusion,
+      retraction: { distance: 0.8, speed: 30, minimumTravel: 1 }
+    });
+    assert.equal(result.type, 'complete');
+    assert.match(result.gcode, /G1 E(?:-0\.80000|[\d.-]+) F1800/);
+  }
+});

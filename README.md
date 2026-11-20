@@ -16,10 +16,16 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. The slicer imports STL, OBJ, PLY, AMF, 3MF, DAE, GLTF, and GLB meshes; GLTF
-files must embed their buffers and images. It supports object transforms, worker-based contour slicing,
-layer previews, estimates, and profile-gated generic G-code export. It does not export FlashForge G/GX,
-UltiMaker UFP, G-code gzip, FPP, or 3MF projects. These are deliberately unavailable until their actual
-format exporters exist. The native editable project format is `.prism`; 3MF currently imports as mesh data.
+files must embed their buffers and images. Models can be selected, moved, rotated, scaled, and sliced.
+Slicing runs through CuraEngine WebAssembly and produces real G-code, layer previews, supports, and print
+metadata. Printer output is gated on the selected profile's firmware flavor, extrusion mode, origin,
+build plate, dimensions, and required commands. Verify generated G-code for the exact physical printer
+before use. The native editable project format is `.prism`; 3MF currently imports as mesh data.
+
+Only G-code has an implemented machine-output exporter. FlashForge G/GX, UltiMaker UFP, G-code gzip,
+FPP, and 3MF project export remain unavailable. The current CuraEngine adapter supports one extruder,
+rectangular build plates, and a limited set of Cura firmware flavors; other printer profiles remain
+searchable but cannot be sliced until a compatible engine/output path is implemented.
 
 The versioned [`src/printer-database.json`](src/printer-database.json) contains 634 visible Cura printer
 definitions and nine machine models from the vendor-maintained
@@ -32,9 +38,10 @@ machine-code placeholders cannot be sliced/exported. No bundled printer has been
 this application. Cura-derived third-party definitions are limited to those in the upstream Cura tree;
 the FlashForge set is limited to the models in FlashForge's current public profile bundle.
 
-Profile data is derived from Cura (LGPL-3.0) and FlashForge Orca (AGPL-3.0); see the linked upstream
-repositories for their license texts and attribution. The profile data does not include upstream slicer
-code.
+Profile data is derived from Cura (LGPL-3.0) and FlashForge Orca (AGPL-3.0). Slicing uses
+[`@toybox-labs/cura-wasm`](https://github.com/Cloud-CNC/cura-wasm), which includes CuraEngine and is
+licensed under MIT/LGPL-3.0-or-later/AGPL-3.0-or-later; its license is shipped in
+`vendor/cura-wasm/LICENSE`.
 
 To refresh the bundled profiles from current upstream checkouts:
 
@@ -80,7 +87,9 @@ npm start
 
 On Linux, Electron may need the system libraries listed in [Electron's Linux prerequisites](https://www.electronjs.org/docs/latest/tutorial/linux).
 
-`npm run check` checks JavaScript syntax; `npm test` runs the headless virtual-filesystem tests.
+`npm run check` checks JavaScript syntax; `npm test` runs application, profile, and slicing tests.
+`npm run build:web` creates the static site and `npm run publish:web` copies it to the repository root
+for GitHub Pages.
 
 ## Included
 
