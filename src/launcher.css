@@ -41,18 +41,25 @@ body {
 .intro h1 { margin: 0; font-size: clamp(44px, 8vw, 76px); line-height: .95; font-weight: 500; }
 .intro > p:last-child { max-width: 470px; margin: 18px 0 0; color: var(--muted); font-size: 17px; line-height: 1.6; }
 
-.tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
-.tool-card { min-height: 290px; display: grid; grid-template-columns: 52px 1fr 30px; align-content: end; gap: 15px; padding: 24px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; background: var(--panel); transition: background .18s, transform .18s; }
+.tools { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.tool-card { min-height: 220px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 22px; align-content: end; gap: 10px; padding: 16px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; background: var(--panel); transition: background .18s, transform .18s; }
 .tool-card:hover { background: #242b35; transform: translateY(-3px); }
-.tool-mark { width: 52px; height: 52px; display: grid; place-items: center; border: 1px solid #69727e; border-radius: 50%; font: 700 18px Arial, sans-serif; }
+.tool-mark { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #69727e; border-radius: 50%; font: 700 16px Arial, sans-serif; }
 .desktop-card .tool-mark { color: #9bd0d6; }
 .cad-card .tool-mark { color: #d7c88f; }
 .slicer-card .tool-mark { color: #d1a68e; }
 .config-card .tool-mark { color: #a9c5e8; }
 .tool-copy { display: flex; flex-direction: column; gap: 8px; }
-.tool-copy b { font-size: 20px; }
+.tool-copy b { font-size: 17px; }
 .tool-copy small { color: var(--muted); line-height: 1.5; }
 .arrow { align-self: end; font: 22px Arial, sans-serif; }
+
+@media (max-width: 1000px) {
+  .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tool-card { min-height: 150px; grid-template-columns: 52px minmax(0, 1fr) 30px; gap: 15px; padding: 24px; }
+  .tool-mark { width: 52px; height: 52px; font-size: 18px; }
+  .tool-copy b { font-size: 20px; }
+}
 
 @media (max-width: 760px) {
   .launcher { width: min(100% - 24px, 1040px); }
