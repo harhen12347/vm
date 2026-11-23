@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111823">
+  <title>Printer Profile Studio</title>
+  <link rel="stylesheet" href="./printer-config.css">
+</head>
+<body>
+  <div class="studio">
+    <aside class="sidebar">
+      <a class="brand" href="./" aria-label="Aether tools">AETHER <span>STUDIO</span></a>
+      <p class="side-label">WORKSPACE</p>
+      <nav id="navigation" aria-label="Main navigation">
+        <button data-page="dashboard" class="nav-item active"><span>◫</span> Dashboard</button>
+        <button data-page="editor" class="nav-item"><span>☷</span> Configuration editor</button>
+        <button data-page="presets" class="nav-item"><span>◈</span> Preset library</button>
+        <button data-page="printers" class="nav-item"><span>▤</span> Printer database</button>
+        <button data-page="filaments" class="nav-item"><span>◉</span> Filament database</button>
+        <button data-page="compare" class="nav-item"><span>⇄</span> Compare profiles</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <a href="./" class="back-link">← All tools</a>
+        <small>Profiles stay in this browser</small>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><p class="eyebrow">PRINTER PROFILE STUDIO</p><h1 id="page-title">Dashboard</h1></div>
+        <div class="top-actions">
+          <label class="import-button">Import profile<input id="import-file" type="file" accept=".json,.csv,.txt,.ini,.cfg,application/json,text/csv,text/plain"></label>
+          <button id="theme-toggle" class="icon-button" title="Toggle color theme">◐</button>
+        </div>
+      </header>
+      <div id="status" role="status" aria-live="polite"></div>
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+  <script type="module" src="./printer-config.js"></script>
+</body>
+</html>

@@ -2,12 +2,13 @@
 
 ## Prism 3D slicer
 
-Open the three-tool launcher at:
+Open the four-tool launcher at:
 
 - `/` or `http://localhost:3000/` - app launcher
 - `/desktop/` - Aether Desktop
 - `/cad.html` - CAD Converter
 - `/slicer.html` - Prism 3D Slicer
+- `/printer-config.html` - Printer Profile Studio
 
 Run the browser tools with:
 
@@ -58,6 +59,11 @@ Users can create, edit, import, and export JSON printer profiles from the Printe
 saved in browser storage; imported machine definitions are read-only and can be copied into a custom
 profile. The SLDPRT converter remains at `/cad` (or `/cad.html` on the static site), and the desktop
 simulator remains at `/desktop`.
+
+Printer Profile Studio stores profiles in browser local storage and supports generic JSON, CSV, TXT, INI,
+and CFG import/export. FCFG and slicer-native exports are not implemented. Unknown printer specifications
+are labeled unverified; filament ranges are general starting references, not guaranteed manufacturer
+settings. Use `npm run publish:web` to publish the Studio page and its assets with the static site.
 
 Aether is a Windows 11-inspired desktop **simulator** built with Electron. It opens as a native desktop app and uses Electron's real Chromium engine for web browsing, but it does not boot or emulate a separate operating system.
 

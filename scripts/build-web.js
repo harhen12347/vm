@@ -25,6 +25,10 @@ for (const [source, destination] of [
   ['src/cad.css', 'cad.css'],
   ['src/cad-page.js', 'cad-page.js'],
   ['src/cad-worker.js', 'cad-worker.js'],
+  ['src/printer-config.html', 'printer-config.html'],
+  ['src/printer-config.css', 'printer-config.css'],
+  ['src/printer-config.js', 'printer-config.js'],
+  ['src/printer-config-core.mjs', 'printer-config-core.mjs'],
   ['src/index.html', 'desktop/index.html'],
   ['src/styles.css', 'desktop/styles.css'],
   ['src/renderer.js', 'desktop/renderer.js']
@@ -66,4 +70,4 @@ fs.cpSync(
   { recursive: true }
 );
 
-console.log(`Built the three-tool website in ${path.relative(root, output)}/`);
+console.log(`Built the Aether browser tools in ${path.relative(root, output)}/`);

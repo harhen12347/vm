@@ -48,6 +48,7 @@ body {
 .desktop-card .tool-mark { color: #9bd0d6; }
 .cad-card .tool-mark { color: #d7c88f; }
 .slicer-card .tool-mark { color: #d1a68e; }
+.config-card .tool-mark { color: #a9c5e8; }
 .tool-copy { display: flex; flex-direction: column; gap: 8px; }
 .tool-copy b { font-size: 20px; }
 .tool-copy small { color: var(--muted); line-height: 1.5; }
