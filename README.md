@@ -117,11 +117,18 @@ serve the static browser tools, but it is public and cannot enforce server-side 
 Use the authenticated Node server for those protected features.
 
 The fourth launcher option, **Printer Profile Studio**, is at `/printer-config.html`. It edits and stores
-profiles in browser local storage, includes generic starting presets and validation, and imports/exports
-generic JSON, CSV, TXT, INI, and CFG. It does not claim FCFG or native FlashPrint, OrcaSlicer, Cura,
-PrusaSlicer, or Bambu Studio compatibility. Adventurer 5M build volume and nozzle choices are sourced
-from the bundled FlashForge Orca profiles; unverified printer facts are labeled as such. Filament ranges
-are generic starting references rather than guaranteed manufacturer settings.
+profiles in browser local storage, imports and exports generic JSON, CSV, TXT, INI, and CFG, and offers
+editable presets and filament starting ranges. Acceleration fields are validated as finite values from
+10 to 100000 in increments of 10; invalid values block exports and can be explicitly rounded. GX settings
+can be sent locally to the Studio for review without uploading the file. The Studio imports .fcfg bytes
+through its native document parser, keeps the parsed document with the profile, and exports through that
+document so unknown keys, original lines, and untouched metadata are retained. The supplied corpus contains
+33 genuine files with 207 keys each and was used for byte-exact parse/export regression tests. Round-trips
+byte-exact with 33 genuine files; not yet tested in FlashPrint itself. No machine ID to printer model mapping
+is assumed; unknown Qt type IDs remain opaque. FlashPrint application open/save/re-export testing has not
+been performed. Adventurer 5M build volume and nozzle choices are sourced from bundled FlashForge Orca
+profiles; other unverified printer facts are labeled as such. Filament ranges are generic starting
+references, not guaranteed manufacturer settings.
 
 ## Deploy to Render
 
@@ -144,7 +151,7 @@ On Linux, Electron may need the system libraries listed in [Electron's Linux pre
 
 `npm run check` checks JavaScript syntax and TypeScript; `npm test` runs application, VM, profile, and slicing tests.
 `npm run build:browser` builds the React VM client. `npm run build:web` creates static files in `dist/`;
-`npm run publish:web` copies only the GX converter files to the repository root for public GitHub Pages hosting.
+`npm run publish:web` publishes the GX converter and Printer Profile Studio assets to the repository root for GitHub Pages hosting.
 Do not use this static publishing command when server-side password protection is required.
 
 ## Optional Electron simulator

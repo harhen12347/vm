@@ -1,4 +1,5 @@
 import { makeModelMetadata, validatePrinterConfiguration, validateBinarySTL } from './gx-converter-core.mjs';
+import { createGXProfileHandoff, GX_PROFILE_HANDOFF_KEY } from './printer-profile-contract.mjs';
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
@@ -38,6 +39,7 @@ function selectFile(file) {
   selectedFile = null;
   notice.hidden = true;
   results.hidden = true;
+  document.querySelector('#send-to-profile-studio').hidden = true;
   if (!file) return;
   if (!/\.(gx|zip|gz)$/i.test(file.name)) {
 	showNotice('Unsupported file type. Select a .gx file or a gzip/ZIP-wrapped GX container.');
@@ -182,9 +184,18 @@ convertButton.addEventListener('click', async () => {
 	if (previewCleanup) previewCleanup();
 	previewSTL(stl.stl);
 
+	let studioHandoffReady = false;
+	try {
+	  localStorage.setItem(GX_PROFILE_HANDOFF_KEY, JSON.stringify(createGXProfileHandoff(sourceFile.name, parsed.printer, parsed.model)));
+	  document.querySelector('#send-to-profile-studio').hidden = false;
+	  studioHandoffReady = true;
+	} catch (error) {
+	  console.error('GX settings could not be saved for Profile Studio.', error);
+	}
 	results.hidden = false;
 	setProgress(100, 'Conversion complete');
-	showNotice(`Conversion complete. STL contains ${stl.segments.toLocaleString()} reconstructed extrusion segments.`, 'success');
+	const handoffMessage = studioHandoffReady ? ' Use “Review in Printer Profile Studio” to edit the extracted settings.' : ' GX settings could not be saved for Profile Studio in this browser.';
+	showNotice(`Conversion complete. STL contains ${stl.segments.toLocaleString()} reconstructed extrusion segments.${handoffMessage}`, 'success');
   } catch (error) {
 	setProgress(100, 'Conversion failed');
 	showNotice(error instanceof Error ? error.message : 'The GX file could not be processed.');
@@ -204,4 +215,5 @@ resetButton.addEventListener('click', () => {
   progressPanel.hidden = true;
   notice.hidden = true;
   results.hidden = true;
+  document.querySelector('#send-to-profile-studio').hidden = true;
 });

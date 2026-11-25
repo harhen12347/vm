@@ -1,8 +1,10 @@
 import {
   FILAMENTS, NOZZLES, PRESET_TYPES, PRINTERS, SETTING_DEFAULTS, SETTING_GROUPS,
-  applyPreset, compareProfiles, createProfile, generateSettings, parseProfile,
-  saveProfileCollection, loadProfileCollection, serializeProfile, validateProfile
+  applyPreset, canExportFCFG, compareFCFGProfiles, compareProfiles, createProfile, generateSettings, isValidAcceleration, parseProfile,
+  profileFromGX, roundAcceleration, saveProfileCollection, loadProfileCollection, serializeProfile, validateProfile
 } from './printer-config-core.mjs';
+import { GX_PROFILE_HANDOFF_KEY, parseGXProfileHandoff } from './printer-profile-contract.mjs';
+import { nativeComparisonHTML } from './printer-config-fcfg-compare.mjs';
 
 const STORAGE_KEY = 'aether-printer-profile-studio-v1';
 const content = document.querySelector('#content');
@@ -127,7 +129,7 @@ function renderDashboard() {
     <div class="section-heading"><h2>My configurations</h2><button class="button" data-page="presets">Explore preset library →</button></div>
     <div class="panel">${app.profiles.length ? app.profiles.map(profileRow).join('') : '<div class="empty">Your saved configurations will appear here.</div>'}</div>
     <div class="section-heading"><h2>Format support</h2></div>
-    <div class="info-box">Generic JSON, CSV, TXT, INI, and CFG import/export are implemented. FCFG and slicer-native exports (FlashPrint, OrcaSlicer, Cura, PrusaSlicer, and Bambu Studio) are not implemented and are not claimed as compatible.</div>`;
+    <div class="info-box">Generic JSON, CSV, TXT, INI, and CFG import/export are supported. Imported FCFG files retain a parsed native document; only edited, mapped values change during export, while unrecognized keys and raw bytes are preserved. Round-trips byte-exact with 33 genuine files; not yet tested in FlashPrint itself. New FCFG settings are never guessed. OrcaSlicer, Cura, PrusaSlicer, and Bambu Studio native exports are not implemented.</div>`;
 }
 
 function nozzleOptions(profile, printer) {
@@ -156,12 +158,39 @@ function validationHTML(profile) {
     ${result.warnings.length ? `<div class="warning-box"><b>Warnings — verify before printing or exporting</b><ul>${result.warnings.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></div>` : ''}`;
 }
 
+function settingDefinitions(tab, settings) {
+  const definitions = { ...(SETTING_GROUPS[tab] || {}) };
+  if (tab === 'Speed') {
+    for (const key of Object.keys(settings)) {
+      if (/acceleration/i.test(key) && !definitions[key]) {
+        definitions[key] = { label: key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase()), min: 10, max: 100000, step: 10, unit: 'mm/s²', explanation: 'Imported acceleration setting. Values must be multiples of 10; verify this field against the printer firmware.' };
+      }
+    }
+  }
+  return definitions;
+}
+
+function sourceDataHTML(profile) {
+  if (!profile.sourceData) return '';
+  if (profile.sourceData.format === 'FlashPrint FCFG' && canExportFCFG(profile)) {
+    const metadata = profile.sourceData.fcfg;
+    const preserved = metadata.document.nodes.filter((node) => node.type === 'entry').length;
+    return '<div class="info-box"><b>Imported FlashPrint FCFG template</b><p>Machine ID ' + esc(metadata.nativeMachineId ?? '(missing)') + ' and ' + preserved + ' native fields are preserved. Mapped settings can be edited; unknown fields remain untouched. Studio printer/material selections do not rewrite native machine/material IDs because no verified mapping is assumed. Round-trips byte-exact with 33 genuine files; not yet tested in FlashPrint itself.</p><details><summary>Review preserved native metadata</summary><pre>' + esc(JSON.stringify({ machineId: metadata.nativeMachineId, profileName: metadata.nativeProfileName, materialName: metadata.nativeMaterialName, nozzleSize: metadata.nativeNozzleSize, inferredFilament: metadata.filamentWasInferred ? profile.filament : null }, null, 2)) + '</pre></details></div>';
+  }
+  if (profile.sourceData.format !== 'GX extracted settings') return '';
+  const missing = profile.sourceData.missing || [];
+  const source = JSON.stringify({ printer: profile.sourceData.printer, model: profile.sourceData.model }, null, 2);
+  return '<div class="info-box"><b>GX source data from ' + esc(profile.sourceData.sourceName || 'unknown file') + '</b><p>Only values shown below were extracted. Other profile values are generic starting points, not values recovered from the GX file. ' +
+    (missing.length ? missing.length + ' expected source fields were not present: ' + esc(missing.join(', ')) + '.' : 'The mapped source fields were found.') +
+    '</p><details><summary>Review extracted fields</summary><pre>' + esc(source) + '</pre></details></div>';
+}
+
 function renderEditor() {
   let profile = activeProfile();
   if (!profile) profile = createNewProfile();
   const printer = printerFor(profile);
   const validation = validateCurrent(profile);
-  const definitions = SETTING_GROUPS[app.editorTab] || {};
+  const definitions = settingDefinitions(app.editorTab, profile.settings);
   const search = app.settingsSearch.toLowerCase();
   const rows = Object.entries(definitions).filter(([key, definition]) =>
     !search || key.toLowerCase().includes(search) || definition.label.toLowerCase().includes(search) || definition.explanation.toLowerCase().includes(search)
@@ -189,27 +218,34 @@ function renderEditor() {
       <div class="small muted" style="margin-top:10px">Generated values are generic starting points. Printer movement limits are unknown unless verified in the database.</div>
       ${app.generatorExplanations.length ? `<div class="info-box"><b>Why these settings were chosen</b><ul>${app.generatorExplanations.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></div>` : ''}
     </div>
+    ${sourceDataHTML(profile)}
     ${validationHTML(profile)}
     <div class="tabs">${Object.keys(SETTING_GROUPS).map((tab) => `<button class="tab-button ${tab === app.editorTab ? 'active' : ''}" data-tab="${esc(tab)}">${esc(tab)}</button>`).join('')}</div>
     <div class="setting-grid">${rows || '<div class="panel empty">No settings match this search in the selected category.</div>'}</div>
     <div class="section-heading"><h2>Save or export</h2></div>
-    <div class="panel toolbar"><select id="export-format" aria-label="Export format"><option value="json">Generic JSON</option><option value="csv">Generic CSV</option><option value="txt">Generic TXT</option><option value="ini">Generic INI</option><option value="cfg">Generic CFG</option><option value="fcfg" disabled>FCFG (unsupported)</option></select>
+    <div class="panel toolbar"><select id="export-format" aria-label="Export format"><option value="json">Generic JSON</option><option value="csv">Generic CSV</option><option value="txt">Generic TXT</option><option value="ini">Generic INI</option><option value="cfg">Generic CFG</option><option value="fcfg" ${canExportFCFG(profile) ? '' : 'disabled'}>FlashPrint FCFG ${canExportFCFG(profile) ? '(imported template)' : '(import a template first)'}</option></select>
       <button class="button" data-action="download">Download configuration</button><button class="button" data-action="copy">Copy configuration</button>
-      <span class="small muted">These generic files are not slicer-native exports.</span></div>`;
+      <span class="small muted">FCFG preserves the imported template; FlashPrint compatibility is not verified.</span></div>`;
 }
 
 function settingCard(key, definition, value) {
   let control;
   if (definition.type === 'checkbox') {
-    control = `<input type="checkbox" data-setting="${key}" ${value === true ? 'checked' : ''} aria-label="${esc(definition.label)}">`;
+    control = '<input type="checkbox" data-setting="' + esc(key) + '" ' + (value === true ? 'checked' : '') + ' aria-label="' + esc(definition.label) + '">';
   } else if (definition.type === 'select') {
-    control = `<select data-setting="${key}" aria-label="${esc(definition.label)}">${definition.options.map((option) => `<option ${value === option ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select>`;
+    control = '<select data-setting="' + esc(key) + '" aria-label="' + esc(definition.label) + '">' + definition.options.map((option) => '<option ' + (value === option ? 'selected' : '') + '>' + esc(option) + '</option>').join('') + '</select>';
   } else {
-    control = `<input type="number" data-setting="${key}" value="${value === undefined ? '' : esc(value)}" min="${definition.min}" max="${definition.max}" step="${definition.step}" aria-label="${esc(definition.label)}">`;
+    control = '<input type="number" data-setting="' + esc(key) + '" value="' + (value === undefined ? '' : esc(value)) + '" min="' + definition.min + '" max="' + definition.max + '" step="' + definition.step + '" aria-label="' + esc(definition.label) + '" ' + (/acceleration/i.test(key) && !isValidAcceleration(value) ? 'aria-invalid="true"' : '') + '>';
   }
-  return `<article class="setting-card"><div><label>${esc(definition.label)}</label><small class="setting-help">${esc(definition.explanation)}</small></div>
-    <div class="control">${control}${definition.unit ? `<span class="unit">${esc(definition.unit)}</span>` : ''}</div>
-    <div class="setting-actions"><button data-action="reset-setting" data-key="${key}">Reset</button><button data-action="regenerate-setting" data-key="${key}">Regenerate</button></div></article>`;
+  const known = Object.values(SETTING_GROUPS).some((group) => Object.hasOwn(group, key));
+  const isAcceleration = /acceleration/i.test(key);
+  const accelerationError = isAcceleration && !isValidAcceleration(value);
+  const actions = (known ? '<button data-action="reset-setting" data-key="' + esc(key) + '">Reset</button><button data-action="regenerate-setting" data-key="' + esc(key) + '">Regenerate</button>' : '') +
+    (isAcceleration ? '<button data-action="round-acceleration" data-key="' + esc(key) + '" ' + (accelerationError ? '' : 'hidden') + '>Round to nearest 10</button>' : '');
+  const validation = isAcceleration ? '<div class="setting-validation" data-validation-for="' + esc(key) + '" aria-live="polite">' + (accelerationError ? 'Use a finite value from 10 to 100000 in increments of 10.' : '') + '</div>' : '';
+  return '<article class="setting-card"><div><label>' + esc(definition.label) + '</label><small class="setting-help">' + esc(definition.explanation) + '</small></div>' +
+    '<div class="control">' + control + (definition.unit ? '<span class="unit">' + esc(definition.unit) + '</span>' : '') + '</div>' +
+    '<div class="setting-actions">' + actions + '</div>' + validation + '</article>';
 }
 
 function renderPresets() {
@@ -229,11 +265,13 @@ function renderPresets() {
 
 function presetDescription(preset) {
   return ({
-    Quality: 'Prioritizes surface finish with reduced layer height and motion.',
-    Balanced: 'A practical starting point balancing detail, print time, and strength.',
-    Fast: 'Increases layer height and movement rates for quicker prints.',
     Draft: 'Uses coarse layers and faster movement for quick prototypes.',
+    Balanced: 'A practical starting point balancing detail, print time, and strength.',
+    Quality: 'Prioritizes surface finish with reduced layer height and motion.',
+    'High Quality': 'Uses finer layers and slower movement than Quality for added surface detail.',
+    Fast: 'Increases layer height and movement rates for quicker prints.',
     Strong: 'Adds perimeter walls, top/bottom layers, and infill.',
+    Custom: 'Keeps the current settings unchanged so you can create a custom profile.',
     'Fine Detail': 'Uses small layers and slower movement for detail work.',
     Lightweight: 'Reduces infill and shell count to conserve material.',
     'Functional Parts': 'Favors more walls and infill for practical part strength.'
@@ -279,8 +317,9 @@ function comparisonContent() {
   if (profiles.length < 2) return '<div class="panel empty" style="margin-top:14px">Select at least two profiles. Material usage and print time cannot be estimated without model geometry and slicer calculations.</div>';
   const rows = compareProfiles(profiles);
   const labels = rows.map((row) => `<tr class="${row.changed ? 'changed' : ''}"><th>${esc(row.label)}</th>${row.values.map((value) => `<td>${esc(value)}</td>`).join('')}</tr>`).join('');
+  const native = profiles.slice(0, 2).every(canExportFCFG) ? nativeComparisonHTML(profiles.slice(0, 2), esc) : '';
   return `<div class="panel" style="margin-top:14px;overflow:auto"><table class="compare-table"><thead><tr><th>Setting</th>${profiles.map((profile) => `<th>${esc(profile.name)}</th>`).join('')}</tr></thead><tbody>${labels || '<tr><td colspan="3">No differences in shared settings.</td></tr>'}</tbody></table>
-    <p class="small muted" style="margin-bottom:0">Temperature, speed, layer height, and strength-related settings are shown together; differing rows are highlighted. Material and time estimates require a model and actual slicer.</p></div>`;
+    <p class="small muted" style="margin-bottom:0">Temperature, speed, layer height, and strength-related settings are shown together; differing rows are highlighted. Material and time estimates require a model and actual slicer.</p></div>${native}`;
 }
 
 function defaultFor(profile, key) {
@@ -334,20 +373,30 @@ function download(profile, format) {
     return;
   }
   if (validation.warnings.length && !window.confirm(`Warnings:\n${validation.warnings.join('\n')}\n\nExport this generic configuration anyway?`)) return;
-  const text = serializeProfile(profile, format);
-  const blob = new Blob([text], { type: format === 'json' ? 'application/json' : 'text/plain;charset=utf-8' });
+  const output = serializeProfile(profile, format);
+  const blob = new Blob([output], { type: format === 'json' ? 'application/json' : 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = `${profile.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'printer-profile'}.${format}`;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  notify(`Downloaded generic ${format.toUpperCase()} profile. It is not a slicer-native file.`);
+  notify(format === 'fcfg'
+    ? 'Downloaded template-backed FCFG. Import it into FlashPrint and verify machine compatibility; this export is not FlashPrint-tested.'
+    : `Downloaded generic ${format.toUpperCase()} profile. It is not a slicer-native file.`);
 }
 
 async function copyProfile(profile, format) {
+  const validation = validateCurrent(profile);
+  if (validation.errors.length) {
+    notify('Copy blocked: ' + validation.errors[0], true);
+    return;
+  }
+  if (validation.warnings.length && !window.confirm('Warnings:\n' + validation.warnings.join('\n') + '\n\nCopy this generic configuration anyway?')) return;
   try {
-    await navigator.clipboard.writeText(serializeProfile(profile, format));
+    const output = serializeProfile(profile, format);
+    const text = output instanceof Uint8Array ? new TextDecoder().decode(output) : output;
+    await navigator.clipboard.writeText(text);
     notify(`Generic ${format.toUpperCase()} profile copied.`);
   } catch (error) {
     notify(`Clipboard access failed: ${error.message}. Use the download option instead.`, true);
@@ -491,7 +540,16 @@ async function importFile(file) {
   if (!file) return;
   try {
     const ext = file.name.split('.').pop()?.toLowerCase();
-    const profile = parseProfile(await file.text(), ext, file.name.replace(/\.[^.]+$/, ''));
+    const input = ext === 'fcfg' ? new Uint8Array(await file.arrayBuffer()) : await file.text();
+    const profile = parseProfile(input, ext, file.name.replace(/\.[^.]+$/, ''));
+    if (profile.sourceData?.format === 'FlashPrint FCFG' && !allPrinters().some((printer) => printer.id === profile.printerId)) {
+      app.printers.push({
+        id: profile.printerId, manufacturer: 'FlashPrint',
+        model: 'Unidentified machine (FCFG ID ' + (profile.sourceData.fcfg.nativeMachineId ?? 'unknown') + ')',
+        buildVolume: null, nozzleDiameters: [], maxNozzleTemperature: null, maxBedTemperature: null,
+        supportedMaterials: [], technology: null, verified: [], source: null
+      });
+    }
     app.profiles.unshift(profile);
     app.activeId = profile.id;
     persist();
@@ -523,6 +581,19 @@ document.querySelector('#import-file').addEventListener('change', (event) => {
 });
 
 content.addEventListener('input', (event) => {
+  if (event.target.matches('[data-setting]') && /acceleration/i.test(event.target.dataset.setting)) {
+    const input = event.target;
+    const profile = activeProfile();
+    const key = input.dataset.setting;
+    if (profile) { profile.settings[key] = input.value === '' ? '' : Number(input.value); persist(); }
+    const valid = isValidAcceleration(input.value);
+    input.setAttribute('aria-invalid', String(!valid));
+    const card = input.closest('.setting-card');
+    const message = card.querySelector('[data-validation-for]');
+    if (message) message.textContent = valid ? '' : 'Use a finite value from 10 to 100000 in increments of 10.';
+    const correction = card.querySelector('[data-action="round-acceleration"]');
+    if (correction) correction.hidden = valid;
+  }
   if (event.target.id === 'settings-search') {
     app.settingsSearch = event.target.value;
     const input = event.target;
@@ -579,7 +650,14 @@ content.addEventListener('click', async (event) => {
   if (!button) return;
   const profile = profileForAction(button);
   const action = button.dataset.action;
-  if (action === 'new') { createNewProfile(); app.page = 'editor'; render(); notify('New configuration created.'); }
+  if (action === 'round-acceleration' && profile) {
+    const key = button.dataset.key;
+    try {
+      profile.settings[key] = roundAcceleration(profile.settings[key]);
+      persist(); renderEditor();
+      notify(key + ' was rounded to the nearest multiple of 10. Review the corrected value before exporting.');
+    } catch (error) { notify('Could not round ' + key + ': ' + error.message, true); }
+  } else if (action === 'new') { createNewProfile(); app.page = 'editor'; render(); notify('New configuration created.'); }
   else if (action === 'edit') { app.page = 'editor'; render(); }
   else if (action === 'select-profile') { selectProfile(button.dataset.id); render(); notify('Configuration selected.'); }
   else if (action === 'rename' && profile) {
@@ -629,6 +707,24 @@ content.addEventListener('click', async (event) => {
   else if (action === 'add-filament') addCustomFilament();
 });
 
+function consumeGXHandoff() {
+  if (new URLSearchParams(location.search).get('importGX') !== '1') return false;
+  const raw = localStorage.getItem(GX_PROFILE_HANDOFF_KEY);
+  if (raw === null) return false;
+  const handoff = parseGXProfileHandoff(JSON.parse(raw));
+  const imported = profileFromGX(handoff);
+  if (imported.printerRecord) app.printers.unshift(imported.printerRecord);
+  app.profiles.unshift(imported.profile);
+  app.activeId = imported.profile.id;
+  app.page = 'editor';
+  localStorage.removeItem(GX_PROFILE_HANDOFF_KEY);
+  persist();
+  history.replaceState(null, '', location.pathname);
+  const missing = imported.profile.sourceData.missing.length;
+  notify('GX settings imported for review. ' + missing + ' source fields were missing; other values are generic starting points.');
+  return true;
+}
+
 function load() {
   try {
     const saved = loadProfileCollection(localStorage, STORAGE_KEY);
@@ -646,6 +742,8 @@ function load() {
     app.profiles = [createProfile()];
     app.activeId = app.profiles[0].id;
   }
+  try { consumeGXHandoff(); }
+  catch (error) { notify('Could not import GX settings: ' + error.message, true); }
 }
 
 load();

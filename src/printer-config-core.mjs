@@ -1,3 +1,8 @@
+import printerDatabase from './printer-database.json' with { type: 'json' };
+import { canExportFCFG, compareFCFGProfiles, importFCFGProfile, updateFCFGFromProfile } from './printer-fcfg-profile.mjs';
+
+export { canExportFCFG, compareFCFGProfiles };
+
 export const NOZZLES = [0.2, 0.25, 0.4, 0.6, 0.8, 1.0];
 
 export const PRINTERS = [
@@ -15,6 +20,21 @@ export const PRINTERS = [
     technology: 'FFF', verified: ['buildVolume', 'nozzleDiameters'],
     source: 'https://github.com/FlashForge/Orca-Flashforge/tree/c45cc8216c184574c36873314ae7caea67c7a1ad/resources/profiles/Flashforge'
   },
+  ...printerDatabase.profiles
+    .filter((printer) => printer.manufacturer?.toLowerCase() === 'flashforge'
+      && !['Adventurer 5M', 'Adventurer 5M Pro'].includes(printer.model))
+    .map((printer) => ({
+      id: printer.id, manufacturer: printer.manufacturer, model: printer.model,
+      buildVolume: printer.buildVolume, nozzleDiameters: printer.nozzleDiameters || [],
+      maxNozzleTemperature: printer.maxNozzleTemperature, maxBedTemperature: printer.maxBedTemperature,
+      supportedMaterials: printer.materials || [], technology: printer.firmwareType,
+      verified: [
+        ...(printer.buildVolume ? ['buildVolume'] : []),
+        ...(printer.nozzleDiameters?.length ? ['nozzleDiameters'] : []),
+        ...(printer.firmwareType ? ['technology'] : [])
+      ],
+      source: printer.source?.url || null
+    })),
   ...[
     ['creality-ender-3-v2-neo', 'Creality', 'Ender 3 V2 Neo'],
     ['creality-ender-3-v3', 'Creality', 'Ender 3 V3'],
@@ -35,6 +55,7 @@ export const FILAMENTS = {
   ABS: { nozzle: [230, 260], bed: [90, 110], cooling: 'Low cooling; avoid drafts.', retraction: [0.5, 2], speed: [25, 60], enclosure: 'Recommended; ventilate appropriately.', drying: 'Dry according to spool maker.' },
   ASA: { nozzle: [230, 260], bed: [90, 110], cooling: 'Low cooling; avoid drafts.', retraction: [0.5, 2], speed: [25, 60], enclosure: 'Recommended; ventilate appropriately.', drying: 'Dry according to spool maker.' },
   TPU: { nozzle: [210, 240], bed: [30, 60], cooling: 'Low to moderate cooling.', retraction: [0.2, 1], speed: [15, 35], enclosure: 'Not usually required', drying: 'Moisture-sensitive; dry according to spool maker.' },
+  PVA: { nozzle: [190, 220], bed: [0, 60], cooling: 'Moderate cooling; tune for layer bonding and the soluble-support use case.', retraction: [0.5, 2], speed: [20, 50], enclosure: 'Not usually required', drying: 'Highly moisture-sensitive; dry and store sealed according to the spool maker.' },
   Nylon: { nozzle: [240, 280], bed: [70, 100], cooling: 'Low cooling.', retraction: [0.5, 2], speed: [20, 50], enclosure: 'Recommended for many grades.', drying: 'Strongly moisture-sensitive; follow spool maker.' },
   PC: { nozzle: [260, 300], bed: [90, 120], cooling: 'Low cooling.', retraction: [0.5, 2], speed: [20, 50], enclosure: 'Recommended; check printer capability.', drying: 'Moisture-sensitive; follow spool maker.' }
 };
@@ -63,8 +84,11 @@ export const SETTING_GROUPS = {
     infillSpeed: { label: 'Infill speed', unit: 'mm/s', min: 1, max: 1000, step: 1, explanation: 'Speed of internal infill structures.' },
     travelSpeed: { label: 'Travel speed', unit: 'mm/s', min: 1, max: 1000, step: 1, explanation: 'Non-extruding move speed; hardware/firmware limit is printer-specific.' },
     firstLayerSpeed: { label: 'First layer speed', unit: 'mm/s', min: 1, max: 500, step: 1, explanation: 'Slower first-layer motion can improve bed adhesion.' },
-    acceleration: { label: 'Acceleration', unit: 'mm/s²', min: 1, max: 100000, step: 10, explanation: 'Motion acceleration. This generic editor does not verify firmware limits.' },
+    acceleration: { label: 'Acceleration', unit: 'mm/s²', min: 10, max: 100000, step: 10, explanation: 'Motion acceleration. Values must be multiples of 10; this generic editor does not verify firmware limits.' },
     jerk: { label: 'Jerk / junction speed', unit: 'mm/s', min: 0, max: 1000, step: 1, explanation: 'Motion cornering parameter; interpretation depends on firmware.' }
+  },
+  Extrusion: {
+    flowRate: { label: 'Flow rate', unit: '%', min: 50, max: 150, step: 1, explanation: 'Extrusion multiplier. Start at 100% and calibrate for the filament and extruder.' }
   },
   Temperature: {
     nozzleTemperature: { label: 'Nozzle temperature', unit: '°C', min: 0, max: 500, step: 1, explanation: 'Steady-state nozzle target; verify against filament and hotend limits.' },
@@ -101,7 +125,7 @@ export const SETTING_GROUPS = {
 export const SETTING_DEFAULTS = {
   layerHeight: 0.2, initialLayerHeight: 0.2, lineWidth: 0.4, wallGenerator: 'Classic', seamPosition: 'Aligned', ironing: false, resolution: 0.1,
   wallCount: 3, topLayers: 5, bottomLayers: 4, infillPercentage: 20, infillPattern: 'Gyroid', infillOverlap: 15,
-  outerWallSpeed: 45, innerWallSpeed: 80, infillSpeed: 100, travelSpeed: 150, firstLayerSpeed: 25, acceleration: 3000, jerk: 8,
+  outerWallSpeed: 45, innerWallSpeed: 80, infillSpeed: 100, travelSpeed: 150, firstLayerSpeed: 25, acceleration: 3000, jerk: 8, flowRate: 100,
   nozzleTemperature: 210, initialNozzleTemperature: 210, bedTemperature: 55, initialBedTemperature: 55,
   fanSpeed: 100, initialFanSpeed: 0, fanActivationLayer: 3, minimumLayerTime: 8,
   retractionDistance: 0.8, retractionSpeed: 35, zHop: 0, retractionOnLayerChange: true,
@@ -109,10 +133,11 @@ export const SETTING_DEFAULTS = {
   adhesion: 'Skirt', skirtLoops: 2, brimWidth: 5
 };
 
-export const PRESET_TYPES = ['Quality', 'Balanced', 'Fast', 'Draft', 'Strong', 'Fine Detail', 'Lightweight', 'Functional Parts'];
+export const PRESET_TYPES = ['Draft', 'Balanced', 'Quality', 'High Quality', 'Fast', 'Strong', 'Custom', 'Fine Detail', 'Lightweight', 'Functional Parts'];
 
 const PRESET_FACTORS = {
   Quality: { layer: 0.7, speed: 0.7, walls: 1, infill: 1, strength: 1 },
+  'High Quality': { layer: 0.5, speed: 0.55, walls: 1.1, infill: 1, strength: 1.05 },
   Balanced: { layer: 1, speed: 1, walls: 1, infill: 1, strength: 1 },
   Fast: { layer: 1.35, speed: 1.45, walls: 0.9, infill: 1, strength: 0.9 },
   Draft: { layer: 1.6, speed: 1.65, walls: 0.8, infill: 0.7, strength: 0.8 },
@@ -139,6 +164,9 @@ export function createProfile({ printerId = PRINTERS[0].id, nozzle = 0.4, filame
 }
 
 export function applyPreset(profile, preset) {
+  if (preset === 'Custom') {
+    return { ...profile, preset, settings: { ...SETTING_DEFAULTS, ...profile.settings }, updatedAt: new Date().toISOString() };
+  }
   const factor = PRESET_FACTORS[preset] || PRESET_FACTORS.Balanced;
   const nozzle = Number(profile.nozzle) || 0.4;
   const settings = { ...SETTING_DEFAULTS, ...profile.settings };
@@ -215,6 +243,21 @@ export function generateSettings(profile, { quality = 50, speed = 50, strength =
   return { ...generated, settings: { ...generated.settings }, explanations };
 }
 
+export function isValidAcceleration(value) {
+  if (typeof value === 'string' && value.trim() === '') return false;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 10 && number <= 100000 && number % 10 === 0;
+}
+
+export function roundAcceleration(value) {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error('Enter a finite acceleration value before rounding.');
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error('Enter a finite acceleration value before rounding.');
+  return Math.max(10, Math.min(100000, Math.round(number / 10) * 10));
+}
+
 export function validateProfile(
   profile,
   printer = PRINTERS.find((item) => item.id === profile?.printerId),
@@ -223,19 +266,24 @@ export function validateProfile(
   const errors = [];
   const warnings = [];
   if (!profile || !profile.settings || typeof profile.settings !== 'object') return { errors: ['Configuration is missing settings.'], warnings };
-  if (!NOZZLES.includes(Number(profile.nozzle))) errors.push('Nozzle diameter must be one of the supported options: 0.2, 0.25, 0.4, 0.6, 0.8, or 1.0 mm.');
+  const isFCFGProfile = profile.sourceData?.format === 'FlashPrint FCFG';
+  const importedNozzle = isFCFGProfile && Number(profile.sourceData.fcfg?.nativeNozzleSize) === Number(profile.nozzle);
+  if (!NOZZLES.includes(Number(profile.nozzle)) && !importedNozzle) errors.push('Nozzle diameter must be one of the supported options: 0.2, 0.25, 0.4, 0.6, 0.8, or 1.0 mm.');
   if (!printer) warnings.push('Printer specification is unknown; printer-specific compatibility is not verified.');
-  else if (printer.verified?.includes('nozzleDiameters') && !printer.nozzleDiameters.includes(Number(profile.nozzle))) {
+  if (isFCFGProfile) warnings.push('Imported FlashPrint machine ID ' + (profile.sourceData.fcfg?.nativeMachineId ?? '(not present)') + ' is preserved from the source template. Generated FCFG has not been tested in FlashPrint.');
+  else if (printer?.verified?.includes('nozzleDiameters') && !printer.nozzleDiameters.includes(Number(profile.nozzle))) {
     warnings.push(`${profile.nozzle} mm nozzle is not listed in the printer profile.`);
   }
   for (const [group, definitions] of Object.entries(SETTING_GROUPS)) {
     for (const [key, definition] of Object.entries(definitions)) {
       if (!(key in profile.settings)) {
-        errors.push(`Missing required setting: ${definition.label}.`);
+        if (!isFCFGProfile) errors.push(`Missing required setting: ${definition.label}.`);
         continue;
       }
       const value = profile.settings[key];
-      if (typeof value === 'string' && value.trim() === '') {
+      if (/acceleration/i.test(key)) {
+        if (!isValidAcceleration(value)) errors.push(definition.label + ' (' + key + ') must be a finite value from 10 to 100000 mm/s² in increments of 10.');
+      } else if (typeof value === 'string' && value.trim() === '') {
         errors.push(`${definition.label} is required.`);
       } else if (definition.type === 'checkbox') {
         if (typeof value !== 'boolean') errors.push(`${definition.label} must be enabled or disabled.`);
@@ -246,6 +294,12 @@ export function validateProfile(
       } else if (Math.abs((Number(value) - definition.min) / definition.step - Math.round((Number(value) - definition.min) / definition.step)) > 1e-7) {
         errors.push(`${definition.label} must use increments of ${definition.step}.`);
       }
+    }
+  }
+  const knownSettingKeys = new Set(Object.values(SETTING_GROUPS).flatMap((group) => Object.keys(group)));
+  for (const [key, value] of Object.entries(profile.settings)) {
+    if (/acceleration/i.test(key) && !knownSettingKeys.has(key) && !isValidAcceleration(value)) {
+      errors.push(key + ' must be a finite value from 10 to 100000 mm/s² in increments of 10.');
     }
   }
   const material = filamentDatabase[profile.filament] || profile.filamentProfile;
@@ -277,6 +331,11 @@ export function validateProfile(
 
 export function serializeProfile(profile, format = 'json') {
   const normalized = { ...profile, settings: { ...profile.settings } };
+  if (format === 'fcfg') {
+    const validation = validateProfile(normalized);
+    if (validation.errors.length) throw new Error('Cannot export FCFG: ' + validation.errors.join(' '));
+    return updateFCFGFromProfile(normalized);
+  }
   if (format === 'json') return JSON.stringify(normalized, null, 2);
   const entries = Object.entries(normalized.settings);
   if (format === 'csv') return [
@@ -307,12 +366,16 @@ export function serializeProfile(profile, format = 'json') {
     '[settings]',
     ...entries.map(([key, value]) => `${key}=${String(value)}`)
   ].join('\n');
-  throw new Error(`Export format "${format}" is not supported. Use JSON, CSV, TXT, INI, or CFG.`);
+  if (format === 'fcfg') throw new Error('Native FCFG export requires an imported FlashPrint .fcfg template.');
+  throw new Error(`Export format "${format}" is not supported. Use JSON, CSV, TXT, INI, CFG, or a template-backed FCFG profile.`);
 }
 
-export function parseProfile(text, format, fallbackName = 'Imported profile') {
+export function parseProfile(input, format, fallbackName = 'Imported profile') {
+  const text = input;
   let profile;
-  if (format === 'json') {
+  if (format === 'fcfg') {
+    profile = importFCFGProfile(input, fallbackName);
+  } else if (format === 'json') {
     profile = JSON.parse(text);
   } else if (format === 'csv') {
     const rows = parseCsv(text);
@@ -329,7 +392,7 @@ export function parseProfile(text, format, fallbackName = 'Imported profile') {
   } else if (format === 'ini' || format === 'cfg' || format === 'txt') {
     profile = parseKeyValue(text, format, fallbackName);
   } else {
-    throw new Error(`Import format "${format}" is not supported. FCFG and slicer-native files are not implemented.`);
+    throw new Error(`Import format "${format}" is not supported. Supported formats are JSON, CSV, TXT, INI, CFG, and FlashPrint FCFG.`);
   }
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) throw new Error('The imported file must contain one profile object.');
   const settings = profile.settings;
@@ -342,11 +405,65 @@ export function parseProfile(text, format, fallbackName = 'Imported profile') {
     filament: String(profile.filament || 'PLA'),
     preset: String(profile.preset || 'Imported'),
     settings: { ...settings },
+    sourceData: profile.sourceData && typeof profile.sourceData === 'object' && !Array.isArray(profile.sourceData) ? profile.sourceData : undefined,
     updatedAt: new Date().toISOString()
   };
   const known = new Set(Object.values(SETTING_GROUPS).flatMap((group) => Object.keys(group)));
-  for (const key of Object.keys(result.settings)) if (!known.has(key)) delete result.settings[key];
+  for (const key of Object.keys(result.settings)) if (!known.has(key) && !/acceleration/i.test(key)) delete result.settings[key];
   return result;
+}
+
+export function profileFromGX(handoff) {
+  const printerSettings = handoff.printer || {};
+  const modelSettings = handoff.model || {};
+  const printerName = String(printerSettings['Printer model'] || '').trim();
+  const normalizedName = normalizePrinterName(printerName);
+  const matchingPrinter = normalizedName && PRINTERS.find((printer) => normalizePrinterName(printer.model) === normalizedName);
+  const nozzleValue = numberFrom(printerSettings['Nozzle size']);
+  const profile = createProfile({
+    printerId: matchingPrinter?.id || PRINTERS[0].id,
+    nozzle: nozzleValue ?? 0.4, filament: 'PLA',
+    name: (printerName || 'Unknown printer') + ' · GX import', preset: 'Custom'
+  });
+  let printerRecord = null;
+  if (!matchingPrinter) {
+    printerRecord = {
+      id: 'gx-import-' + cryptoId(),
+      manufacturer: printerName.toLowerCase().includes('flashforge') ? 'Flashforge' : 'GX import',
+      model: printerName || 'Unknown printer from GX', buildVolume: null, nozzleDiameters: [],
+      maxNozzleTemperature: null, maxBedTemperature: null, supportedMaterials: [],
+      technology: null, verified: [], source: null
+    };
+    profile.printerId = printerRecord.id;
+  }
+  const missing = [];
+  const importNumber = (source, target, label, also = []) => {
+    const value = numberFrom(source[label]);
+    if (value === null) { missing.push(label); return; }
+    profile.settings[target] = value;
+    for (const key of also) profile.settings[key] = value;
+  };
+  importNumber(printerSettings, 'nozzleTemperature', 'Nozzle temperature', ['initialNozzleTemperature']);
+  importNumber(printerSettings, 'bedTemperature', 'Bed temperature', ['initialBedTemperature']);
+  importNumber(printerSettings, 'retractionDistance', 'Retraction distance');
+  importNumber(printerSettings, 'retractionSpeed', 'Retraction speed');
+  const layerHeight = numberFrom(modelSettings['Layer height']) ?? numberFrom(printerSettings['Layer height']);
+  if (layerHeight === null) missing.push('Layer height');
+  else profile.settings.layerHeight = profile.settings.initialLayerHeight = layerHeight;
+  importNumber(modelSettings, 'infillPercentage', 'Infill');
+  importNumber(modelSettings, 'wallCount', 'Wall count');
+  importNumber(modelSettings, 'topLayers', 'Top layers');
+  importNumber(modelSettings, 'bottomLayers', 'Bottom layers');
+  const supports = booleanFrom(modelSettings.Supports);
+  if (supports === null) missing.push('Supports');
+  else profile.settings.supportsEnabled = supports;
+  if (nozzleValue === null) missing.push('Nozzle size');
+  else profile.settings.lineWidth = nozzleValue;
+  profile.sourceData = {
+    format: 'GX extracted settings', sourceName: handoff.sourceName,
+    printer: { ...printerSettings }, model: { ...modelSettings }, missing
+  };
+  return { profile, printerRecord };
 }
 
 export function compareProfiles(profiles) {
@@ -402,6 +519,22 @@ function parseScalar(value) {
   if (value === 'false') return false;
   if (value !== '' && Number.isFinite(Number(value))) return Number(value);
   return value;
+}
+function numberFrom(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/%$/, '');
+  return normalized && Number.isFinite(Number(normalized)) ? Number(normalized) : null;
+}
+function booleanFrom(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return null;
+  if (/^(true|yes|1)$/i.test(value.trim())) return true;
+  if (/^(false|no|0)$/i.test(value.trim())) return false;
+  return null;
+}
+function normalizePrinterName(value) {
+  return String(value || '').toLowerCase().replace(/flashforge/g, '').replace(/[^a-z0-9]/g, '');
 }
 function csvEscape(value) {
   const text = String(value);
