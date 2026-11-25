@@ -38,9 +38,11 @@ export function extractGXText(buffer) {
 	}
 	let bestStart = -1;
 	let bestCommands = 0;
-	for (const start of candidates) {
-	  const sample = normalized.slice(start, start + 1024 * 1024);
-	  const commands = (sample.match(/(?:^|\n)\s*(?:G|M|T)\d+/gi) || []).length;
+	let windowEnd = 0;
+	for (let index = 0; index < candidates.length; index += 1) {
+	  const start = candidates[index];
+	  while (windowEnd < candidates.length && candidates[windowEnd] < start + 1024 * 1024) windowEnd += 1;
+	  const commands = windowEnd - index;
 	  if (commands > bestCommands) {
 		bestStart = start;
 		bestCommands = commands;
@@ -203,7 +205,6 @@ export function makeBinarySTL(gcode, options = {}) {
   let x = 0, y = 0, z = 0, e = 0;
   let absoluteXYZ = true, absoluteE = true;
   const segments = [];
-  const allTriangles = [];
   let min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
 
   for (const raw of gcode.split('\n')) {
@@ -271,7 +272,16 @@ export function makeBinarySTL(gcode, options = {}) {
 
   if (!segments.length) throw new Error('No extruding toolpaths were found, so a 3D STL could not be reconstructed.');
 
-  const addTriangle = (a, b, c) => allTriangles.push([a, b, c]);
+  const triangleCount = segments.length * 12;
+  const buffer = new ArrayBuffer(84 + triangleCount * 50);
+  const view = new DataView(buffer);
+  view.setUint32(80, triangleCount, true);
+  let offset = 84;
+  const addTriangle = (a, b, c) => {
+	view.setUint32(offset, 0, true); view.setUint32(offset + 4, 0, true); view.setUint32(offset + 8, 0, true); offset += 12;
+	for (const point of [a, b, c]) { view.setFloat32(offset, point[0], true); view.setFloat32(offset + 4, point[1], true); view.setFloat32(offset + 8, point[2], true); offset += 12; }
+	view.setUint16(offset, 0, true); offset += 2;
+  };
   const boxForSegment = (s) => {
 	const [ax, ay, az, bx, by, bz] = s;
 	const dx = bx - ax, dy = by - ay;
@@ -287,17 +297,6 @@ export function makeBinarySTL(gcode, options = {}) {
 	addTriangle(a0,a1,b1); addTriangle(a0,b1,b0); addTriangle(d0,c0,c1); addTriangle(d0,c1,d1);
   };
   for (const segment of segments) boxForSegment(segment);
-
-  const buffer = new ArrayBuffer(84 + allTriangles.length * 50);
-  const view = new DataView(buffer);
-  view.setUint32(80, allTriangles.length, true);
-  let offset = 84;
-  for (const [a, b, c] of allTriangles) {
-	view.setUint32(offset, 0, true); view.setUint32(offset + 4, 0, true); view.setUint32(offset + 8, 0, true); offset += 12;
-	for (const point of [a,b,c]) { view.setFloat32(offset, point[0], true); view.setFloat32(offset + 4, point[1], true); view.setFloat32(offset + 8, point[2], true); offset += 12; }
-	view.setUint16(offset, 0, true); offset += 2;
-  }
-  const bufferSize = offset;
-  const stl = new Uint8Array(buffer, 0, bufferSize);
+  const stl = new Uint8Array(buffer, 0, offset);
   return { stl, segments: segments.length, dimensions: { x: max[0] - min[0] + width, y: max[1] - min[1] + width, z: max[2] - min[2] + layerHeight } };
 }

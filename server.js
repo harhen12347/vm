@@ -52,6 +52,7 @@ const staticFiles = new Map([
   ['/gx-converter.css', path.join(__dirname, 'src', 'gx-converter.css')],
   ['/gx-converter.js', path.join(__dirname, 'src', 'gx-converter.js')],
   ['/gx-converter-core.mjs', path.join(__dirname, 'src', 'gx-converter-core.mjs')],
+  ['/gx-converter-worker.js', path.join(__dirname, 'src', 'gx-converter-worker.js')],
   ['/vendor/three/three.module.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.js')],
   ['/vendor/three/three.core.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.core.js')],
   ['/vendor/cura-wasm/es.js', path.join(__dirname, 'node_modules', '@toybox-labs', 'cura-wasm', 'dist', 'es.js')],

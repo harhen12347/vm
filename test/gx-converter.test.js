@@ -13,6 +13,13 @@ const assert = require('node:assert/strict');
 	assert.equal(parsed.printer['Layer height'], 0.20);
   });
 
+  test('scans large xgcode payloads without quadratic candidate rescans', () => {
+	const commands = Array.from({ length: 20000 }, (_, index) => 'G1 X' + index + ' Y1 E' + (index + 1)).join('\n');
+	const wrapper = Buffer.concat([Buffer.from('xgcode 1.0\n\0'), Buffer.alloc(14512), Buffer.from(commands)]);
+	const parsed = parseGX(wrapper);
+	assert.match(parsed.gcode, /G1 X19999 Y1 E20000/);
+  });
+
   test('creates a non-empty binary STL from extrusion moves', () => {
 	const gcode = 'G90\nM82\nG1 X0 Y0 Z0.2 E0\nG1 X10 Y0 Z0.2 E1\nG1 X10 Y10 Z0.2 E2';
 	const result = makeBinarySTL(gcode, { width: 0.42, layerHeight: 0.20 });

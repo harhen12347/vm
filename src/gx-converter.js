@@ -1,4 +1,4 @@
-import { parseGX, makeModelMetadata, makeBinarySTL, validatePrinterConfiguration, validateBinarySTL } from './gx-converter-core.mjs';
+import { makeModelMetadata, validatePrinterConfiguration, validateBinarySTL } from './gx-converter-core.mjs';
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
@@ -95,6 +95,10 @@ let previewCleanup = null;
 function previewSTL(buffer) {
   const host = document.querySelector('#model-preview');
   host.replaceChildren();
+  if (buffer.byteLength > 2 * 1024 * 1024) {
+	host.textContent = 'The reconstructed model is large, so its preview was skipped to keep this page responsive. The STL download is ready.';
+	return;
+  }
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x242b34);
   const camera = new THREE.PerspectiveCamera(35, host.clientWidth / host.clientHeight, 0.1, 2000);
@@ -127,65 +131,49 @@ function previewSTL(buffer) {
   previewCleanup = () => { cancelAnimationFrame(frame); renderer.dispose(); renderer.domElement.remove(); };
 }
 
-async function decompressGX(arrayBuffer) {
-  const bytes = new Uint8Array(arrayBuffer);
-  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
-    if (!('DecompressionStream' in window)) throw new Error('Gzip-compressed GX files are not supported by this browser.');
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  }
-  if (bytes.length >= 2 && bytes[0] === 0x78) {
-    if ('DecompressionStream' in window) {
-      try {
-        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
-        return new Uint8Array(await new Response(stream).arrayBuffer());
-      } catch { /* Not a zlib stream; continue to GX detection. */ }
-    }
-  }
-  if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 3 || bytes[2] === 5 || bytes[2] === 7)) {
-    const { unzipSync } = await import('three/addons/libs/fflate.module.js');
-    const entries = unzipSync(bytes);
-    const candidates = Object.entries(entries).filter(([name]) => /\.(gx|gcode|txt)$/i.test(name));
-    const gxEntry = candidates.find(([name]) => /\.gx$/i.test(name)) || candidates[0];
-    if (!gxEntry) throw new Error('The ZIP archive does not contain a readable GX or G-code file.');
-    return gxEntry[1];
-  }
-  return bytes;
+function processInWorker(buffer, onProgress) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./gx-converter-worker.js', import.meta.url), { type: 'module' });
+    worker.addEventListener('message', event => {
+      const message = event.data;
+      if (message.type === 'progress') {
+        onProgress(message.value, message.title);
+        return;
+      }
+      worker.terminate();
+      if (message.type === 'error') reject(new Error(message.message));
+      else resolve(message.result);
+    });
+    worker.addEventListener('error', event => {
+      worker.terminate();
+      reject(new Error(event.message || 'GX conversion worker failed.'));
+    }, { once: true });
+    worker.postMessage({ type: 'convert', buffer }, [buffer]);
+  });
 }
 
 convertButton.addEventListener('click', async () => {
   if (!selectedFile) return;
+  const sourceFile = selectedFile;
   convertButton.disabled = true;
-  resetButton.disabled = false;
+  resetButton.disabled = true;
   notice.hidden = true;
   setProgress(8, 'Reading GX container');
   try {
 	await new Promise(resolve => setTimeout(resolve, 20));
-	const sourceBuffer = await selectedFile.arrayBuffer();
-	setProgress(20, 'Detecting compression');
-	const buffer = await decompressGX(sourceBuffer);
-	setProgress(28, 'Extracting G-code payload');
-	await new Promise(resolve => setTimeout(resolve, 20));
-	const parsed = parseGX(buffer);
-	setProgress(55, 'Extracting settings');
-	await new Promise(resolve => setTimeout(resolve, 20));
-
-	const layerValue = parsed.printer['Layer height'] ?? parsed.model['Layer height'];
-	const nozzleValue = parsed.printer['Nozzle size'];
-	const stl = makeBinarySTL(parsed.gcode, {
-	  width: nozzleValue ? Number(nozzleValue) : 0.42,
-	  layerHeight: layerValue ? Number(layerValue) : 0.20
-	});
-	setProgress(82, 'Building binary STL');
-	await new Promise(resolve => setTimeout(resolve, 20));
+	const sourceBuffer = await sourceFile.arrayBuffer();
+	setProgress(20, 'Processing GX in background');
+	const result = await processInWorker(sourceBuffer, setProgress);
+	const parsed = { printer: result.printer, model: result.model };
+	const stl = { stl: result.stl, segments: result.segments, dimensions: result.dimensions };
 
 	validatePrinterConfiguration(parsed.printer);
 	validateBinarySTL(stl.stl);
 	renderSettings('#printer-settings', parsed.printer);
 	renderSettings('#model-settings', parsed.model);
-	const baseName = selectedFile.name.replace(/\.gx$/i, '').replace(/\.(zip|gz)$/i, '');
+	const baseName = sourceFile.name.replace(/\.gx$/i, '').replace(/\.(zip|gz)$/i, '');
 	const printerJson = JSON.stringify(parsed.printer, null, 2);
-	const metadataJson = makeModelMetadata(selectedFile.name, parsed.printer, parsed.model);
+	const metadataJson = makeModelMetadata(sourceFile.name, parsed.printer, parsed.model);
 	blobLink('#printer-download', new Blob([printerJson], { type: 'application/json' }), `${baseName}-printer.json`);
 	blobLink('#model-download', new Blob([metadataJson], { type: 'application/json' }), `${baseName}-metadata.json`);
 	blobLink('#stl-download', new Blob([stl.stl], { type: 'model/stl' }), `${baseName}.stl`);
@@ -202,6 +190,7 @@ convertButton.addEventListener('click', async () => {
 	showNotice(error instanceof Error ? error.message : 'The GX file could not be processed.');
   } finally {
 	convertButton.disabled = false;
+	resetButton.disabled = false;
   }
 });
 

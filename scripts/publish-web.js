@@ -11,7 +11,7 @@ const build = spawnSync(process.execPath, [path.join(__dirname, 'build-web.js')]
 
 if (build.error) throw build.error;
 if (build.status !== 0) process.exit(build.status || 1);
-const files = ['gx-converter.html', 'gx-converter.css', 'gx-converter.js', 'gx-converter-core.mjs'];
+const files = ['gx-converter.html', 'gx-converter.css', 'gx-converter.js', 'gx-converter-core.mjs', 'gx-converter-worker.js'];
 for (const file of files) {
   const source = path.join(output, file);
   if (!fs.existsSync(source)) throw new Error(`GX converter build is missing: ${file}`);

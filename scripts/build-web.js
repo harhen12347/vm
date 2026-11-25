@@ -33,6 +33,7 @@ for (const [source, destination] of [
   ['src/gx-converter.css', 'gx-converter.css'],
   ['src/gx-converter.js', 'gx-converter.js'],
   ['src/gx-converter-core.mjs', 'gx-converter-core.mjs'],
+  ['src/gx-converter-worker.js', 'gx-converter-worker.js'],
   ['src/site-login.html', 'site-login.html'],
   ['src/site-login.css', 'site-login.css'],
   ['src/site-login.js', 'site-login.js'],
