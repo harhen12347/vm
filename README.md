@@ -12,16 +12,25 @@ The browser VM is at `/`. Existing tools remain available at:
 - `/desktop/` - Aether Desktop
 - `/cad.html` - CAD Converter
 - `/slicer.html` - Prism 3D Slicer
+- `/printer-config.html` - Printer Profile Studio
+- `/gx-converter.html` - GX File Converter
 
-Start the browser VM and its local API server with:
+Set `SITE_PASSWORD` in the server environment before starting the website. Do not commit the value;
+`.env.example` is only a placeholder. In PowerShell, for example:
 
-```bash
+```powershell
+$env:SITE_PASSWORD = Read-Host "Choose a site password"
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The Node API listens only on `127.0.0.1:3001`; Vite proxies its API and
-authenticated VNC WebSocket to the browser. Install QEMU on the Linux host:
+The login is verified by the Node server. Protected responses require an in-memory server session stored
+in an HttpOnly, SameSite=Strict cookie (Secure in production); sessions expire after 12 hours. Five failed
+attempts per client are rate-limited for one hour. The requested three-digit password is weak; use a long,
+random secret for real deployment. The server fails to start if `SITE_PASSWORD` is missing. Open
+`http://localhost:3000`; Vite gates development requests
+through the authenticated API server at `127.0.0.1:3001`, including the authenticated VNC WebSocket.
+Install QEMU on the Linux host:
 
 ```bash
 sudo apt install qemu-system-x86 qemu-utils
@@ -44,8 +53,8 @@ sudo mount -t 9p -o trans=virtio,version=9p2000.L hostshare /mnt/host
 ```
 
 Files in `/mnt/host` can be downloaded from the browser VM page. Transfers are limited to 128 MB per file.
-Browser-side display preferences are saved in IndexedDB. GitHub Pages and the browser-only tools do not
-include the QEMU backend; the Node server must remain running for the VM to work.
+Browser-side display preferences are saved in IndexedDB. Static hosting does not include the QEMU backend
+or server-side login; use the protected Node server for the whole site.
 
 ## Prism 3D slicer
 
@@ -96,12 +105,16 @@ simulator remains at `/desktop`.
 Aether's older Windows 11-inspired shell remains an optional Electron **simulator**; the browser VM is the
 real Ubuntu guest streamed through noVNC.
 
-## Static browser tools
+## GX conversion and protected hosting
+
+The GX File Converter is available at `/gx-converter.html`. It extracts compatible G-code metadata and
+reconstructs an STL from extrusion paths; it cannot recover original CAD geometry. Native FlashPrint FCFG
+creation is not supported, so it only offers a separately named JSON metadata export.
 
 The SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 50 `.SLDPRT` files
-(128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. GitHub Pages
-serves the slicer from the repository root and the converter at `/cad.html`:
-[harhen12347.github.io/vm](https://harhen12347.github.io/vm/).
+(128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. The five browser
+tools and VM APIs require the authenticated Node server; GitHub Pages and the static `dist/` output cannot
+enforce this server-side login and must not be used as the protected production site.
 
 The fourth launcher option, **Printer Profile Studio**, is at `/printer-config.html`. It edits and stores
 profiles in browser local storage, includes generic starting presets and validation, and imports/exports
@@ -110,15 +123,17 @@ PrusaSlicer, or Bambu Studio compatibility. Adventurer 5M build volume and nozzl
 from the bundled FlashForge Orca profiles; unverified printer facts are labeled as such. Filament ranges
 are generic starting references rather than guaranteed manufacturer settings.
 
-To update the Pages files after editing the converter:
+## Deploy to Render
 
-```bash
-npm install
-npm run publish:web
-```
+The repository includes a Dockerfile and `render.yaml` for a persistent Render web service. Connect the
+repository to Render's Blueprint deployment, then set the required `SITE_PASSWORD` secret in the Render
+dashboard before deploying. The blueprint deliberately leaves this value unsynchronized and never stores
+it in Git. Render needs the included QEMU packages, a persistent disk, and sufficient memory for the VM.
+Future pushes to the connected repository can trigger automatic deployments. Do not enable GitHub Pages for
+this repository: static hosting bypasses server-side authentication. `npm run build:web` only builds static
+assets for inspection; publishing them to a static host is intentionally disabled.
 
-Commit and push the generated root files to publish updates. The browser VM can also be started with
-`npm run serve`.
+The browser VM can also be started with `npm run serve` after setting `SITE_PASSWORD`.
 
 The Electron native desktop build provides integrated Chromium tabs:
 
@@ -130,8 +145,8 @@ On Linux, Electron may need the system libraries listed in [Electron's Linux pre
 
 `npm run check` checks JavaScript syntax and TypeScript; `npm test` runs application, VM, profile, and slicing tests.
 `npm run build:browser` builds the React VM client.
-`npm run build:web` creates the static site and `npm run publish:web` copies it to the repository root
-for GitHub Pages.
+`npm run build:web` creates static assets for inspection; `npm run publish:web` is intentionally disabled because
+static hosting cannot enforce the server-side login.
 
 ## Optional Electron simulator
 

@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: aether-printing-tools
+    runtime: docker
+    plan: pro-plus
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: aether-data
+      mountPath: /var/data
+      sizeGB: 40
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "true"
+      - key: AETHER_DATA_DIR
+        value: /var/data/.aether-desktop
+      - key: SITE_PASSWORD
+        sync: false

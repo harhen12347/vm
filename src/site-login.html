@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#11151d">
+  <title>Sign in | Aether Tools</title>
+  <link rel="stylesheet" href="/site-login.css">
+</head>
+<body>
+  <main class="login-page">
+	<form id="login-form" class="login-card">
+	  <a class="wordmark" href="/" aria-label="Aether Tools"><span>A</span>AETHER</a>
+	  <p class="eyebrow">PRIVATE WORKSPACE</p>
+	  <h1>Welcome back</h1>
+	  <p class="intro">Enter the site password to access the tools.</p>
+	  <label for="site-password">Password</label>
+	  <input id="site-password" name="password" type="password" autocomplete="current-password" required autofocus>
+	  <p id="login-error" class="error" role="alert" hidden></p>
+	  <button id="login-button" type="submit">Continue <span aria-hidden="true">→</span></button>
+	  <small>Your password is verified by the site server.</small>
+	</form>
+  </main>
+  <script src="/site-login.js" defer></script>
+</body>
+</html>

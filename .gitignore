@@ -1,4 +1,15 @@
 node_modules/
 dist/
 release/
+.vs/
+.vite/
+.vercel/
+.render/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+*.local
 npm-debug.log*
