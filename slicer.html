@@ -38,19 +38,6 @@
         <button id="delete-object" title="Delete">Delete</button>
         <button id="arrange-object" title="Arrange">Arrange</button>
       </div>
-      <div class="transform-tools">
-        <div class="section-title">Transform</div>
-        <label>X <input id="pos-x" type="number" value="0" step="1"></label>
-        <label>Y <input id="pos-y" type="number" value="0" step="1"></label>
-        <label>Z <input id="pos-z" type="number" value="0" step="1"></label>
-        <label>Scale % <input id="scale-value" type="number" value="100" min="1" max="1000"></label>
-        <label>Rotate X° <input id="rotate-x" type="number" value="0" min="-360" max="360" step="5"></label>
-        <label>Rotate Y° <input id="rotate-y" type="number" value="0" min="-360" max="360" step="5"></label>
-        <label>Rotate Z° <input id="rotate-z" type="number" value="0" min="-360" max="360" step="5"></label>
-        <div class="transform-actions">
-          <button id="center-object">Center</button><button id="plate-object">Place on plate</button>
-        </div>
-      </div>
     </aside>
 
     <section id="viewport" class="viewport" aria-label="3D build plate">
@@ -60,6 +47,37 @@
         <button data-view="top" title="Top view">Top</button>
         <button data-view="front" title="Front view">Front</button>
         <button data-view="side" title="Side view">Side</button>
+      </div>
+      <button id="transform-toggle" class="transform-toggle" aria-expanded="true" aria-controls="transform-tools">Transform</button>
+      <div id="transform-tools" class="transform-tools">
+        <div class="section-title">Move (mm)</div>
+        <div class="transform-grid">
+          <label>X <input id="pos-x" type="number" value="0" step="1"></label>
+          <label>Y <input id="pos-y" type="number" value="0" step="1"></label>
+          <label>Z <input id="pos-z" type="number" value="0" step="1"></label>
+        </div>
+        <div class="section-title">Rotate (degrees)</div>
+        <div class="transform-grid">
+          <label>X <input id="rotate-x" type="number" value="0" min="-360" max="360" step="5"></label>
+          <label>Y <input id="rotate-y" type="number" value="0" min="-360" max="360" step="5"></label>
+          <label>Z <input id="rotate-z" type="number" value="0" min="-360" max="360" step="5"></label>
+        </div>
+        <div class="transform-actions rotate-actions">
+          <button data-rotate-axis="x" data-rotate-degrees="90">X +90°</button>
+          <button data-rotate-axis="y" data-rotate-degrees="90">Y +90°</button>
+          <button data-rotate-axis="z" data-rotate-degrees="90">Z +90°</button>
+        </div>
+        <div class="section-title">Resize (mm)</div>
+        <div class="transform-grid">
+          <label>X <input id="size-x" type="number" min="0.1" step="0.1"></label>
+          <label>Y <input id="size-y" type="number" min="0.1" step="0.1"></label>
+          <label>Z <input id="size-z" type="number" min="0.1" step="0.1"></label>
+        </div>
+        <label class="uniform-scale"><input id="uniform-scale" type="checkbox" checked> Keep proportions</label>
+        <div class="transform-actions">
+          <button id="center-object">Center</button><button id="plate-object">Place on plate</button>
+          <button id="reset-rotation">Reset rotation</button><button id="reset-size">Reset size</button>
+        </div>
       </div>
       <div class="axis-widget" aria-hidden="true"><i class="axis-x"></i><i class="axis-y"></i><i class="axis-z"></i></div>
     </section>

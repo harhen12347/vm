@@ -8,6 +8,7 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+import { dimensionsFromScale, normalizePositionsAtPlate, scaleForDimensions } from './slicer-transforms.mjs';
 
 const printerDatabaseResponse = await fetch('./printer-database.json', { cache: 'no-cache' });
 if (!printerDatabaseResponse.ok) throw new Error(`Unable to load printer database (${printerDatabaseResponse.status}).`);
@@ -178,8 +179,10 @@ function fitPrinterView() {
 fitPrinterView();
 
 let pointerAction = null;
+const selectionRaycaster = new THREE.Raycaster();
+const selectionPointer = new THREE.Vector2();
 renderer.domElement.addEventListener('pointerdown', (event) => {
-  pointerAction = { x:event.clientX, y:event.clientY, yaw, pitch, target:cameraTarget.clone(), type:event.button === 2 || event.shiftKey ? 'pan' : 'orbit' };
+  pointerAction = { x:event.clientX, y:event.clientY, yaw, pitch, target:cameraTarget.clone(), type:event.button === 2 || event.shiftKey ? 'pan' : 'orbit', button:event.button };
   renderer.domElement.setPointerCapture(event.pointerId);
 });
 renderer.domElement.addEventListener('contextmenu',(event)=>event.preventDefault());
@@ -198,7 +201,18 @@ renderer.domElement.addEventListener('pointermove', (event) => {
   }
   updateCamera();
 });
-renderer.domElement.addEventListener('pointerup', () => { pointerAction = null; });
+renderer.domElement.addEventListener('pointerup', (event) => {
+  if (!pointerAction) return;
+  const action=pointerAction;
+  pointerAction=null;
+  if(action.button!==0||Math.hypot(event.clientX-action.x,event.clientY-action.y)>5||!objects.length)return;
+  const bounds=renderer.domElement.getBoundingClientRect();
+  selectionPointer.set(((event.clientX-bounds.left)/bounds.width)*2-1,-((event.clientY-bounds.top)/bounds.height)*2+1);
+  selectionRaycaster.setFromCamera(selectionPointer,camera);
+  scene.updateMatrixWorld(true);
+  const hit=selectionRaycaster.intersectObjects(objects.map((item)=>item.mesh),true)[0];
+  if(hit)selectObject(objects.find((item)=>item.mesh===hit.object));
+});
 renderer.domElement.addEventListener('wheel', (event) => {
   event.preventDefault();
   cameraDistance = THREE.MathUtils.clamp(cameraDistance * (event.deltaY > 0 ? 1.08 : 0.92), 100, 900);
@@ -298,10 +312,11 @@ function selectObject(item) {
   $('#pos-x').value = item.mesh.position.x.toFixed(1);
   $('#pos-y').value = item.mesh.position.y.toFixed(1);
   $('#pos-z').value = item.mesh.position.z.toFixed(1);
-  $('#scale-value').value=(item.mesh.scale.x*100).toFixed(1);
   $('#rotate-x').value=THREE.MathUtils.radToDeg(item.mesh.rotation.x).toFixed(1);
   $('#rotate-y').value=THREE.MathUtils.radToDeg(item.mesh.rotation.y).toFixed(1);
   $('#rotate-z').value=THREE.MathUtils.radToDeg(item.mesh.rotation.z).toFixed(1);
+  const dimensions=dimensionsFromScale(item.baseSize,item.mesh.scale.toArray());
+  ['size-x','size-y','size-z'].forEach((id,axis)=>$('#'+id).value=dimensions[axis].toFixed(1));
   setObjectList();
 }
 
@@ -322,17 +337,18 @@ async function importFiles(fileList) {
       }
       if (positions.length < 9) throw new Error('Mesh contains too few vertices.');
       if(positions.length/3>300_000)throw new Error(`${file.name}: exceeds the 300,000 triangle browser limit.`);
-      const geometry = geometryFromPositions(positions);
+      positions=normalizePositionsAtPlate(positions);
+      const geometry=geometryFromPositions(positions);
       geometry.computeBoundingBox();
-      const box = geometry.boundingBox;
-      geometry.translate(-(box.min.x + box.max.x) / 2, -(box.min.y + box.max.y) / 2, -box.min.z);
+      const box=geometry.boundingBox;
+      const baseSize=[box.max.x-box.min.x,box.max.y-box.min.y,box.max.z-box.min.z];
       const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
         color: 0x78a8c5, emissive: 0x000000, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide
       }));
       mesh.geometry.computeBoundingBox();
       mesh.position.set(objects.length ? 0 : 0, objects.length ? 0 : 0, 0);
       scene.add(mesh);
-      const item = { name:file.name, mesh, positions };
+      const item = { name:file.name, mesh, positions, baseSize };
       objects.push(item);
       imported++;
       selectObject(item);
@@ -399,9 +415,12 @@ function placeOnPlate(item) {
 
 function syncTransformInputs() {
   if (!selectedObject) return;
-  $('#pos-x').value = selectedObject.mesh.position.x.toFixed(1);
-  $('#pos-y').value = selectedObject.mesh.position.y.toFixed(1);
-  $('#pos-z').value = selectedObject.mesh.position.z.toFixed(1);
+  $('#pos-x').value=selectedObject.mesh.position.x.toFixed(1);
+  $('#pos-y').value=selectedObject.mesh.position.y.toFixed(1);
+  $('#pos-z').value=selectedObject.mesh.position.z.toFixed(1);
+  const dimensions=dimensionsFromScale(selectedObject.baseSize,selectedObject.mesh.scale.toArray());
+  ['size-x','size-y','size-z'].forEach((id,axis)=>$('#'+id).value=dimensions[axis].toFixed(1));
+  ['rotate-x','rotate-y','rotate-z'].forEach((id,axis)=>$('#'+id).value=THREE.MathUtils.radToDeg(selectedObject.mesh.rotation[['x','y','z'][axis]]).toFixed(1));
 }
 
 $('#model-file').addEventListener('change', (event) => importFiles(event.target.files));
@@ -412,28 +431,51 @@ for (const eventName of ['dragleave','drop']) viewport.addEventListener(eventNam
 });
 
 function addSettingEvents() {
-  ['pos-x','pos-y','pos-z'].forEach((id, axis) => $(`#${id}`).addEventListener('change', () => {
-    if (!selectedObject) return;
-    selectedObject.mesh.position[['x','y','z'][axis]] = Number($(`#${id}`).value);
-    invalidateSlice();
-  }));
-  ['rotate-x','rotate-y','rotate-z'].forEach((id)=>$(`#${id}`).addEventListener('change',()=>{
+  ['pos-x','pos-y','pos-z'].forEach((id,axis)=>$('#'+id).addEventListener('change',()=>{
     if(!selectedObject)return;
-    selectedObject.mesh.rotation.set(
-      THREE.MathUtils.degToRad(Number($('#rotate-x').value)||0),
-      THREE.MathUtils.degToRad(Number($('#rotate-y').value)||0),
-      THREE.MathUtils.degToRad(Number($('#rotate-z').value)||0)
-    );
-    placeOnPlate(selectedObject);
-    syncTransformInputs();
+    const value=Number($('#'+id).value);
+    if(!Number.isFinite(value)){showStatus('Enter a finite position for the selected model.',true);syncTransformInputs();return;}
+    selectedObject.mesh.position[['x','y','z'][axis]]=value;
     invalidateSlice();
   }));
-  $('#scale-value').addEventListener('change', () => {
-    if (!selectedObject) return;
-    const scale = Number($('#scale-value').value) / 100;
-    selectedObject.mesh.scale.set(scale, scale, scale);
+  const applyRotation=()=>{
+    if(!selectedObject)return;
+    const degrees=['rotate-x','rotate-y','rotate-z'].map((id)=>Number($('#'+id).value));
+    if(degrees.some((value)=>!Number.isFinite(value))){showStatus('Enter a finite rotation for each model axis.',true);syncTransformInputs();return;}
+    selectedObject.mesh.rotation.set(...degrees.map((value)=>THREE.MathUtils.degToRad(value)));
     placeOnPlate(selectedObject);
-    syncTransformInputs();
+    invalidateSlice();
+  };
+  ['rotate-x','rotate-y','rotate-z'].forEach((id)=>$('#'+id).addEventListener('change',applyRotation));
+  $$('[data-rotate-axis]').forEach((button)=>button.addEventListener('click',()=>{
+    if(!selectedObject)return;
+    const axis=button.dataset.rotateAxis;
+    const current=THREE.MathUtils.radToDeg(selectedObject.mesh.rotation[axis]);
+    const degrees=((current+Number(button.dataset.rotateDegrees)+180)%360+360)%360-180;
+    selectedObject.mesh.rotation[axis]=THREE.MathUtils.degToRad(degrees);
+    placeOnPlate(selectedObject);
+    invalidateSlice();
+  }));
+  ['size-x','size-y','size-z'].forEach((id,axis)=>$('#'+id).addEventListener('change',()=>{
+    if(!selectedObject)return;
+    const current=dimensionsFromScale(selectedObject.baseSize,selectedObject.mesh.scale.toArray());
+    const target=current.map((dimension,index)=>index===axis?Number($('#'+id).value):dimension);
+    try{
+      selectedObject.mesh.scale.fromArray(scaleForDimensions(selectedObject.baseSize,target,$('#uniform-scale').checked,axis));
+      placeOnPlate(selectedObject);
+      invalidateSlice();
+    }catch(error){showStatus(error.message,true);syncTransformInputs();}
+  }));
+  $('#reset-size').addEventListener('click',()=>{
+    if(!selectedObject)return;
+    selectedObject.mesh.scale.set(1,1,1);
+    placeOnPlate(selectedObject);
+    invalidateSlice();
+  });
+  $('#reset-rotation').addEventListener('click',()=>{
+    if(!selectedObject)return;
+    selectedObject.mesh.rotation.set(0,0,0);
+    placeOnPlate(selectedObject);
     invalidateSlice();
   });
   $('#center-object').addEventListener('click', () => {
@@ -467,7 +509,7 @@ function addSettingEvents() {
     mesh.position.x += 20;
     mesh.position.y += 20;
     scene.add(mesh);
-    const item = {name:`${selectedObject.name} copy`, mesh, positions:selectedObject.positions};
+    const item = {name:`${selectedObject.name} copy`, mesh, positions:selectedObject.positions, baseSize:[...selectedObject.baseSize]};
     objects.push(item);
     selectObject(item);
     invalidateSlice();
@@ -479,6 +521,10 @@ function addSettingEvents() {
   });
 }
 addSettingEvents();
+$('#transform-toggle').addEventListener('click',()=>{
+  const expanded=$('#transform-tools').classList.toggle('open');
+  $('#transform-toggle').setAttribute('aria-expanded',String(expanded));
+});
 
 for (const tab of $$('.tabs button')) tab.addEventListener('click', () => {
   $$('.tabs button').forEach((button) => button.classList.remove('active'));
@@ -730,7 +776,8 @@ $('#export-button').addEventListener('click',()=>{
 });
 
 $('#save-project').addEventListener('click',()=>{
-  const project={version:1,printer:$('#printer-profile').value,filament:$('#filament-profile').value,objects:objects.map((item)=>({
+  const project={version:2,printer:$('#printer-profile').value,filament:$('#filament-profile').value,objects:objects.map((item)=>(
+{
     name:item.name,position:item.mesh.position.toArray(),scale:item.mesh.scale.toArray(),
     rotation:[item.mesh.rotation.x,item.mesh.rotation.y,item.mesh.rotation.z],positions:item.positions
   })),settings:{
@@ -750,7 +797,7 @@ $('#project-file').addEventListener('change',async(event)=>{
   try{
     if(file.size>128*1024*1024)throw new Error('Project file exceeds 128 MB.');
     const project=JSON.parse(await file.text());
-    if(project.version!==1||!Array.isArray(project.objects))throw new Error('Unsupported or invalid Prism project.');
+    if(![1,2].includes(project.version)||!Array.isArray(project.objects))throw new Error('Unsupported or invalid Prism project.');
     const restored=project.objects.map((entry)=>{
       if(!Array.isArray(entry.positions)||entry.positions.length<3||
          entry.positions.some((point)=>!Array.isArray(point)||point.length!==3||point.some((value)=>!Number.isFinite(value)))||
@@ -758,14 +805,19 @@ $('#project-file').addEventListener('change',async(event)=>{
          !Array.isArray(entry.scale)||entry.scale.length!==3||entry.scale.some((value)=>!Number.isFinite(value)||value<=0)){
         throw new Error('Project contains invalid model geometry or transforms.');
       }
+      const positions=project.version===1?normalizePositionsAtPlate(entry.positions):entry.positions;
+      const geometry=geometryFromPositions(positions);
+      geometry.computeBoundingBox();
+      const bounds=geometry.boundingBox;
+      const baseSize=[bounds.max.x-bounds.min.x,bounds.max.y-bounds.min.y,bounds.max.z-bounds.min.z];
       const mesh=new THREE.Mesh(
-        geometryFromPositions(entry.positions),
+        geometry,
         new THREE.MeshStandardMaterial({color:0x78a8c5,roughness:0.55,metalness:0.05,side:THREE.DoubleSide})
       );
       mesh.position.fromArray(entry.position);
       mesh.scale.fromArray(entry.scale);
       mesh.rotation.fromArray(entry.rotation||[0,0,0]);
-      return {name:String(entry.name||'Imported model'),mesh,positions:entry.positions};
+      return {name:String(entry.name||'Imported model'),mesh,positions,baseSize};
     });
     objects.forEach((item)=>{scene.remove(item.mesh);item.mesh.geometry.dispose();item.mesh.material.dispose();});
     objects.splice(0,objects.length,...restored);

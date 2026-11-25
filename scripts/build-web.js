@@ -17,6 +17,7 @@ for (const [source, destination] of [
   ['src/slicer.html', 'slicer.html'],
   ['src/slicer.css', 'slicer.css'],
   ['src/slicer.js', 'slicer.js'],
+  ['src/slicer-transforms.mjs', 'slicer-transforms.mjs'],
   ['src/printer-database.mjs', 'printer-database.mjs'],
   ['src/cura-engine-adapter.mjs', 'cura-engine-adapter.mjs'],
   ['src/printer-database.json', 'printer-database.json'],

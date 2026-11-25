@@ -59,11 +59,14 @@ backend or server-side login; use the protected Node server for the full VM and 
 ## Prism 3D slicer
 
 The slicer imports STL, OBJ, PLY, AMF, 3MF, DAE, GLTF, and GLB meshes; GLTF
-files must embed their buffers and images. Models can be selected, moved, rotated, scaled, and sliced.
+files must embed their buffers and images. Models can be selected from the object list or viewport,
+moved numerically, rotated on each axis (with 90-degree shortcuts), and resized in millimetres with
+optional proportional scaling. Transform controls are available as a viewport dock on narrow screens.
 Slicing runs through CuraEngine WebAssembly and produces real G-code, layer previews, supports, and print
 metadata. Printer output is gated on the selected profile's firmware flavor, extrusion mode, origin,
 build plate, dimensions, and required commands. Verify generated G-code for the exact physical printer
-before use. The native editable project format is `.prism`; 3MF currently imports as mesh data.
+before use. The native editable project format is `.prism`; version 1 projects are migrated when opened,
+and 3MF currently imports as mesh data.
 
 Only G-code has an implemented machine-output exporter. FlashForge G/GX, UltiMaker UFP, G-code gzip,
 FPP, and 3MF project export remain unavailable. The current CuraEngine adapter supports one extruder,
