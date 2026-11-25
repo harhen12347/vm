@@ -1,27 +1,42 @@
 {
   "name": "aether-desktop",
   "version": "1.0.0",
-  "description": "A polished, persistent desktop environment simulator built with Electron",
+  "description": "A browser-based Ubuntu virtual machine streamed from QEMU",
   "main": "src/main.js",
   "author": "Aether",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "node server.js",
-    "serve": "node server.js",
+    "dev": "node scripts/dev.js",
+    "serve": "node scripts/dev.js",
+    "build:browser": "vite --config vite.config.mjs build",
     "build:web": "node scripts/build-web.js",
     "publish:web": "npm run build:web && node scripts/publish-web.js",
     "import:cura-printers": "node scripts/import-cura-printers.js",
     "import:flashforge-printers": "node scripts/import-flashforge-printers.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check src/printer-database.mjs && node --check src/cura-engine-adapter.mjs && node --check scripts/import-cura-printers.js && node --check scripts/import-flashforge-printers.js && node --check scripts/build-web.js && node --check scripts/publish-web.js",
+    "typecheck": "tsc --noEmit",
+    "check": "node --check server.js && node --check scripts/dev.js && node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/vm-manager.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --check src/printer-config.js && node --check src/printer-config-core.mjs && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check src/printer-database.mjs && node --check src/cura-engine-adapter.mjs && node --check scripts/import-cura-printers.js && node --check scripts/import-flashforge-printers.js && node --check scripts/build-web.js && node --check scripts/publish-web.js && npm run typecheck",
     "test": "node --test"
   },
   "devDependencies": {
-    "electron": "^45.4.1"
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.4.1",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
   },
   "dependencies": {
+    "@novnc/novnc": "^1.7.0",
     "@toybox-labs/cura-wasm": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "sldprt": "https://codeload.github.com/blussyya/solidworks-converters/tar.gz/b0568c01ae28ccfe9ac90f5bdf4a580a36b2a51d",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "ws": "^8.23.0"
   }
 }

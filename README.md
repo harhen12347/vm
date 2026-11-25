@@ -1,22 +1,55 @@
-# Aether Desktop
+# Aether Browser VM
 
-## Prism 3D slicer
+Aether runs a real Ubuntu Desktop virtual machine on a Linux host and streams its display to Chrome using
+QEMU VNC over WebSockets and noVNC. The browser client is React + TypeScript with Tailwind CSS; Node.js
+manages the VM and shared files. The guest has its own persistent virtual disk, GNOME desktop, Firefox,
+terminal, file manager, text editor, calculator, settings, and application launcher.
 
-Open the four-tool launcher at:
+## Run the browser VM
 
-- `/` or `http://localhost:3000/` - app launcher
+The browser VM is at `/`. Existing tools remain available at:
+
 - `/desktop/` - Aether Desktop
 - `/cad.html` - CAD Converter
 - `/slicer.html` - Prism 3D Slicer
-- `/printer-config.html` - Printer Profile Studio
 
-Run the browser tools with:
+Start the browser VM and its local API server with:
 
 ```bash
+npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The slicer imports STL, OBJ, PLY, AMF, 3MF, DAE, GLTF, and GLB meshes; GLTF
+Open `http://localhost:3000`. The Node API listens only on `127.0.0.1:3001`; Vite proxies its API and
+authenticated VNC WebSocket to the browser. Install QEMU on the Linux host:
+
+```bash
+sudo apt install qemu-system-x86 qemu-utils
+```
+
+In the VM page, download the official Ubuntu 24.04.5 Desktop ISO (about 6.25 GB), boot the installer,
+and install Ubuntu onto the 32 GB virtual disk. QEMU tries the virtual disk first and falls back to the
+installer ISO when the disk has no bootable system, so subsequent starts boot the installed guest. The
+guest uses 4 GB RAM and 2 CPU cores. The disk, guest applications, browser history, and files persist
+under `~/.aether-desktop/ubuntu-vm/`. QEMU uses KVM when the host user has access to `/dev/kvm`;
+otherwise it uses multi-threaded software emulation, which is still slower than KVM.
+The guest has outbound internet through QEMU user-mode networking. The VM console is not exposed as a
+public VNC port.
+
+To exchange files with the host, upload them in the VM page, then mount the shared folder inside Ubuntu:
+
+```bash
+sudo mkdir -p /mnt/host
+sudo mount -t 9p -o trans=virtio,version=9p2000.L hostshare /mnt/host
+```
+
+Files in `/mnt/host` can be downloaded from the browser VM page. Transfers are limited to 128 MB per file.
+Browser-side display preferences are saved in IndexedDB. GitHub Pages and the browser-only tools do not
+include the QEMU backend; the Node server must remain running for the VM to work.
+
+## Prism 3D slicer
+
+The slicer imports STL, OBJ, PLY, AMF, 3MF, DAE, GLTF, and GLB meshes; GLTF
 files must embed their buffers and images. Models can be selected, moved, rotated, scaled, and sliced.
 Slicing runs through CuraEngine WebAssembly and produces real G-code, layer previews, supports, and print
 metadata. Printer output is gated on the selected profile's firmware flavor, extrusion mode, origin,
@@ -60,12 +93,8 @@ saved in browser storage; imported machine definitions are read-only and can be 
 profile. The SLDPRT converter remains at `/cad` (or `/cad.html` on the static site), and the desktop
 simulator remains at `/desktop`.
 
-Printer Profile Studio stores profiles in browser local storage and supports generic JSON, CSV, TXT, INI,
-and CFG import/export. FCFG and slicer-native exports are not implemented. Unknown printer specifications
-are labeled unverified; filament ranges are general starting references, not guaranteed manufacturer
-settings. Use `npm run publish:web` to publish the Studio page and its assets with the static site.
-
-Aether is a Windows 11-inspired desktop **simulator** built with Electron. It opens as a native desktop app and uses Electron's real Chromium engine for web browsing, but it does not boot or emulate a separate operating system.
+Aether's older Windows 11-inspired shell remains an optional Electron **simulator**; the browser VM is the
+real Ubuntu guest streamed through noVNC.
 
 ## Static browser tools
 
@@ -74,6 +103,13 @@ The SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 
 serves the slicer from the repository root and the converter at `/cad.html`:
 [harhen12347.github.io/vm](https://harhen12347.github.io/vm/).
 
+The fourth launcher option, **Printer Profile Studio**, is at `/printer-config.html`. It edits and stores
+profiles in browser local storage, includes generic starting presets and validation, and imports/exports
+generic JSON, CSV, TXT, INI, and CFG. It does not claim FCFG or native FlashPrint, OrcaSlicer, Cura,
+PrusaSlicer, or Bambu Studio compatibility. Adventurer 5M build volume and nozzle choices are sourced
+from the bundled FlashForge Orca profiles; unverified printer facts are labeled as such. Filament ranges
+are generic starting references rather than guaranteed manufacturer settings.
+
 To update the Pages files after editing the converter:
 
 ```bash
@@ -81,9 +117,8 @@ npm install
 npm run publish:web
 ```
 
-Commit and push the generated root files to publish updates. The full Aether desktop simulator remains
-available as an optional local server with `npm run serve`.
-To preview the full desktop simulator in a browser, start its optional local server with `npm run serve`.
+Commit and push the generated root files to publish updates. The browser VM can also be started with
+`npm run serve`.
 
 The Electron native desktop build provides integrated Chromium tabs:
 
@@ -93,11 +128,12 @@ npm start
 
 On Linux, Electron may need the system libraries listed in [Electron's Linux prerequisites](https://www.electronjs.org/docs/latest/tutorial/linux).
 
-`npm run check` checks JavaScript syntax; `npm test` runs application, profile, and slicing tests.
+`npm run check` checks JavaScript syntax and TypeScript; `npm test` runs application, VM, profile, and slicing tests.
+`npm run build:browser` builds the React VM client.
 `npm run build:web` creates the static site and `npm run publish:web` copies it to the repository root
 for GitHub Pages.
 
-## Included
+## Optional Electron simulator
 
 - Boot and sign-in screens, a desktop, Start menu, taskbar, clock, notification panel, power menu, and draggable/minimizable/maximizable app windows.
 - File Explorer and Notepad backed by a persistent virtual filesystem. Files are stored in Electron's per-user app-data folder as `aether-files.json`, not in the host filesystem. Desktop, Documents, Downloads, and Pictures are created on first launch.
@@ -109,4 +145,5 @@ for GitHub Pages.
 
 ## What this is not
 
-Aether is not a bootable virtual machine, a host-file manager, or a full operating system. Its desktop apps and filesystem are simulated inside Electron. Web pages run in Chromium, and host CPU/memory information is real. A genuine VM would require an operating-system disk image and a hypervisor such as QEMU/KVM or VirtualBox; neither QEMU nor VirtualBox is installed in the inspected environment.
+Aether's optional Windows-inspired Electron shell is a simulator, not an operating system. The browser VM,
+in contrast, runs Ubuntu itself under QEMU; it requires a Linux server host and a browser client.

@@ -3,12 +3,21 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
+const { constants: fsConstants } = require('node:fs');
+const { pipeline } = require('node:stream/promises');
+const { randomBytes, timingSafeEqual } = require('node:crypto');
+const WebSocket = require('ws');
+const { WebSocketServer } = require('ws');
 const { VirtualFileSystem } = require('./src/vfs');
 const { convertSldprtToStl, MAX_CAD_FILE_BYTES } = require('./src/cad-converter');
+const { UbuntuVmManager, VM_VNC_WEBSOCKET_PORT } = require('./src/vm-manager');
 
-const port = Number(process.env.PORT || 3000);
-const host = process.env.HOST || '0.0.0.0';
+const port = Number(process.env.PORT || 3001);
+const host = process.env.HOST || '127.0.0.1';
 const files = new VirtualFileSystem(path.join(os.homedir(), '.aether-desktop', 'aether-files.json'));
+const vmManager = new UbuntuVmManager({ userDataPath: path.join(os.homedir(), '.aether-desktop') });
+const MAX_VM_UPLOAD_BYTES = 128 * 1024 * 1024;
+const vmAccessToken = randomBytes(32).toString('hex');
 const staticFiles = new Map([
   ['/', path.join(__dirname, 'src', 'launcher.html')],
   ['/launcher.css', path.join(__dirname, 'src', 'launcher.css')],
@@ -90,6 +99,55 @@ async function readCadFile(request) {
   return Buffer.concat(chunks, size);
 }
 
+function validateSharedName(name) {
+  if (typeof name !== 'string' || !name || name.length > 255 || name === '.' || name === '..'
+      || /[\\/\0]/.test(name)) {
+    throw Object.assign(new Error('Choose a single valid file name.'), { statusCode: 400 });
+  }
+  return name;
+}
+
+function requireVmToken(request) {
+  const supplied = request.headers['x-aether-vm-token'];
+  const expected = Buffer.from(vmAccessToken);
+  if (typeof supplied !== 'string' || Buffer.byteLength(supplied) !== expected.length
+      || !timingSafeEqual(Buffer.from(supplied), expected)) {
+    throw Object.assign(new Error('Invalid VM request token.'), { statusCode: 403 });
+  }
+}
+
+async function readVmUpload(request) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > MAX_VM_UPLOAD_BYTES) {
+      throw Object.assign(new Error(`Shared files must be ${MAX_VM_UPLOAD_BYTES / 1024 / 1024} MB or smaller.`), {
+        statusCode: 413
+      });
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, size);
+}
+
+async function listSharedFiles() {
+  await fs.mkdir(vmManager.sharedPath, { recursive: true });
+  const entries = await fs.readdir(vmManager.sharedPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const stat = await fs.lstat(path.join(vmManager.sharedPath, entry.name)).catch((error) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat) continue;
+    if (!stat.isFile()) continue;
+    files.push({ name: entry.name, size: stat.size, modifiedAt: stat.mtime.toISOString() });
+  }
+  return files.sort((left, right) => left.name.localeCompare(right.name));
+}
+
 async function handleApi(request, response, pathname) {
   if (pathname === '/api/cad/sldprt-to-stl') {
     if (request.method !== 'POST') return respondJson(response, 405, { error: 'Method not allowed.' });
@@ -108,7 +166,62 @@ async function handleApi(request, response, pathname) {
     return;
   }
   if (pathname === '/api/health' && request.method === 'GET') {
-    return respondJson(response, 200, { status: 'ok', name: 'Aether Desktop' });
+    return respondJson(response, 200, { status: 'ok', name: 'Aether Browser VM' });
+  }
+  if (pathname === '/api/vm/status' && request.method === 'GET') {
+    return respondJson(response, 200, { ...await vmManager.status(), csrfToken: vmAccessToken });
+  }
+  if (pathname === '/api/vm/download' && request.method === 'POST') {
+    requireVmToken(request);
+    return respondJson(response, 200, { ...await vmManager.downloadUbuntuIso(), csrfToken: vmAccessToken });
+  }
+  if (pathname === '/api/vm/start' && request.method === 'POST') {
+    requireVmToken(request);
+    return respondJson(response, 200, { ...await vmManager.start(), csrfToken: vmAccessToken });
+  }
+  if (pathname === '/api/vm/shutdown' && request.method === 'POST') {
+    requireVmToken(request);
+    await vmManager.requestShutdown();
+    return respondJson(response, 200, { ok: true });
+  }
+  if (pathname === '/api/vm/shared' && request.method === 'GET') {
+    return respondJson(response, 200, await listSharedFiles());
+  }
+  if (pathname === '/api/vm/shared/upload' && request.method === 'POST') {
+    requireVmToken(request);
+    if ((request.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase() !== 'application/octet-stream') {
+      return respondJson(response, 415, { error: 'Upload a shared file as application/octet-stream.' });
+    }
+    const name = validateSharedName(new URL(request.url, 'http://localhost').searchParams.get('name'));
+    await fs.mkdir(vmManager.sharedPath, { recursive: true });
+    const filePath = path.join(vmManager.sharedPath, name);
+    await fs.writeFile(filePath, await readVmUpload(request), { flag: 'wx', mode: 0o600 });
+    return respondJson(response, 201, { ok: true, name });
+  }
+  if (pathname === '/api/vm/shared/download' && request.method === 'GET') {
+    const name = validateSharedName(new URL(request.url, 'http://localhost').searchParams.get('name'));
+    const filePath = path.join(vmManager.sharedPath, name);
+    const handle = await fs.open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      await handle.close();
+      throw Object.assign(new Error('Shared file not found.'), { statusCode: 404 });
+    }
+    response.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': stat.size,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff'
+    });
+    await pipeline(handle.createReadStream(), response);
+    return;
+  }
+  if (pathname === '/api/vm/shared/delete' && request.method === 'POST') {
+    requireVmToken(request);
+    const body = await readJson(request);
+    await fs.unlink(path.join(vmManager.sharedPath, validateSharedName(body.name)));
+    return respondJson(response, 200, { ok: true });
   }
   if (pathname === '/api/system' && request.method === 'GET') {
     return respondJson(response, 200, {
@@ -180,16 +293,79 @@ const server = http.createServer(async (request, response) => {
       response.destroy(error);
       return;
     }
-    const statusCode = error.statusCode || (error.message.includes('not found') ? 404 : 400);
+    const statusCode = error.statusCode || (error.code === 'ENOENT' || error.message.includes('not found')
+      ? 404
+      : error.code === 'EEXIST' ? 409 : 400);
     respondJson(response, statusCode, { error: error.message || 'Request failed.' });
   }
 });
 
+const consoleServer = new WebSocketServer({ noServer: true });
+const consoleClients = new Set();
+server.on('upgrade', (request, socket, head) => {
+  let requestUrl;
+  try {
+    requestUrl = new URL(request.url, 'http://localhost');
+  } catch {
+    socket.destroy();
+    return;
+  }
+  const suppliedToken = requestUrl.searchParams.get('token') || '';
+  if (requestUrl.pathname !== '/vm-ws'
+      || Buffer.byteLength(suppliedToken) !== Buffer.byteLength(vmAccessToken)
+      || !timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(vmAccessToken))) {
+    socket.destroy();
+    return;
+  }
+  vmManager.status().then((status) => {
+    if (!status.running) {
+      socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    consoleServer.handleUpgrade(request, socket, head, (client) => {
+      consoleServer.emit('connection', client, request);
+    });
+  }).catch(() => socket.destroy());
+});
+
+consoleServer.on('connection', (client) => {
+  consoleClients.add(client);
+  const upstream = new WebSocket(`ws://127.0.0.1:${VM_VNC_WEBSOCKET_PORT}/`, 'binary');
+  const queuedMessages = [];
+  client.on('message', (data, isBinary) => {
+    if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+    else queuedMessages.push({ data, isBinary });
+  });
+  upstream.on('open', () => {
+    for (const message of queuedMessages.splice(0)) upstream.send(message.data, { binary: message.isBinary });
+  });
+  upstream.on('message', (data, isBinary) => {
+    if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
+  });
+  upstream.on('error', () => {
+    if (client.readyState === WebSocket.OPEN) client.close(1011, 'QEMU VNC console is unavailable.');
+  });
+  client.on('close', () => {
+    consoleClients.delete(client);
+    upstream.close();
+  });
+  client.on('error', () => upstream.close());
+  upstream.on('close', () => {
+    if (client.readyState === WebSocket.OPEN) client.close(1011, 'QEMU VNC console closed.');
+  });
+});
+
 server.listen(port, host, () => {
-  console.log(`Aether Desktop listening at http://${host}:${port}`);
+  console.log(`Aether Browser VM API listening at http://${host}:${port}`);
   console.log(`Persistent virtual files: ${pathToFileURL(path.join(os.homedir(), '.aether-desktop', 'aether-files.json')).pathname}`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  process.on(signal, () => {
+    for (const client of consoleClients) client.close(1001, 'VM server is shutting down.');
+    vmManager.stop()
+      .catch((error) => console.error(`Could not stop the Ubuntu VM: ${error.message}`))
+      .finally(() => server.close(() => process.exit(0)));
+  });
 }
