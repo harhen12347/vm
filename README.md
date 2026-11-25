@@ -53,8 +53,8 @@ sudo mount -t 9p -o trans=virtio,version=9p2000.L hostshare /mnt/host
 ```
 
 Files in `/mnt/host` can be downloaded from the browser VM page. Transfers are limited to 128 MB per file.
-Browser-side display preferences are saved in IndexedDB. Static hosting does not include the QEMU backend
-or server-side login; use the protected Node server for the whole site.
+Browser-side display preferences are saved in IndexedDB. GitHub Pages is public and does not include the QEMU
+backend or server-side login; use the protected Node server for the full VM and password-protected site.
 
 ## Prism 3D slicer
 
@@ -105,16 +105,16 @@ simulator remains at `/desktop`.
 Aether's older Windows 11-inspired shell remains an optional Electron **simulator**; the browser VM is the
 real Ubuntu guest streamed through noVNC.
 
-## GX conversion and protected hosting
+## GX conversion and website hosting
 
 The GX File Converter is available at `/gx-converter.html`. It extracts compatible G-code metadata and
 reconstructs an STL from extrusion paths; it cannot recover original CAD geometry. Native FlashPrint FCFG
 creation is not supported, so it only offers a separately named JSON metadata export.
 
 The SLDPRT-to-STL converter runs entirely in your browser. Select or drop up to 50 `.SLDPRT` files
-(128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. The five browser
-tools and VM APIs require the authenticated Node server; GitHub Pages and the static `dist/` output cannot
-enforce this server-side login and must not be used as the protected production site.
+(128 MB each) and download the resulting binary STL files. Your CAD files are not uploaded. GitHub Pages can
+serve the static browser tools, but it is public and cannot enforce server-side login or provide the VM APIs.
+Use the authenticated Node server for those protected features.
 
 The fourth launcher option, **Printer Profile Studio**, is at `/printer-config.html`. It edits and stores
 profiles in browser local storage, includes generic starting presets and validation, and imports/exports
@@ -129,9 +129,8 @@ The repository includes a Dockerfile and `render.yaml` for a persistent Render w
 repository to Render's Blueprint deployment, then set the required `SITE_PASSWORD` secret in the Render
 dashboard before deploying. The blueprint deliberately leaves this value unsynchronized and never stores
 it in Git. Render needs the included QEMU packages, a persistent disk, and sufficient memory for the VM.
-Future pushes to the connected repository can trigger automatic deployments. Do not enable GitHub Pages for
-this repository: static hosting bypasses server-side authentication. `npm run build:web` only builds static
-assets for inspection; publishing them to a static host is intentionally disabled.
+Future pushes to the connected repository can trigger automatic deployments. GitHub Pages can also serve the
+static browser tools, but that deployment is public and does not use `SITE_PASSWORD`.
 
 The browser VM can also be started with `npm run serve` after setting `SITE_PASSWORD`.
 
@@ -144,9 +143,9 @@ npm start
 On Linux, Electron may need the system libraries listed in [Electron's Linux prerequisites](https://www.electronjs.org/docs/latest/tutorial/linux).
 
 `npm run check` checks JavaScript syntax and TypeScript; `npm test` runs application, VM, profile, and slicing tests.
-`npm run build:browser` builds the React VM client.
-`npm run build:web` creates static assets for inspection; `npm run publish:web` is intentionally disabled because
-static hosting cannot enforce the server-side login.
+`npm run build:browser` builds the React VM client. `npm run build:web` creates static files in `dist/`;
+`npm run publish:web` copies only the GX converter files to the repository root for public GitHub Pages hosting.
+Do not use this static publishing command when server-side password protection is required.
 
 ## Optional Electron simulator
 
