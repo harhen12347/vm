@@ -7,15 +7,16 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "start:web": "node server.js",
     "dev": "node scripts/dev.js",
     "serve": "node scripts/dev.js",
     "build:browser": "vite --config vite.config.mjs build",
     "build:web": "node scripts/build-web.js",
-    "publish:web": "npm run build:web && node scripts/publish-web.js",
+    "publish:web": "node scripts/publish-web.js",
     "import:cura-printers": "node scripts/import-cura-printers.js",
     "import:flashforge-printers": "node scripts/import-flashforge-printers.js",
     "typecheck": "tsc --noEmit",
-    "check": "node --check server.js && node --check scripts/dev.js && node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/vm-manager.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --check src/printer-config.js && node --check src/printer-config-core.mjs && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check src/printer-database.mjs && node --check src/cura-engine-adapter.mjs && node --check scripts/import-cura-printers.js && node --check scripts/import-flashforge-printers.js && node --check scripts/build-web.js && node --check scripts/publish-web.js && npm run typecheck",
+    "check": "node --check server.js && node --check scripts/dev.js && node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/vfs.js && node --check src/vm-manager.js && node --check src/cad-converter.js && node --check src/cad-convert-worker.js && node --check src/cad-page.js && node --check src/cad-worker.js && node --check src/printer-config.js && node --check src/printer-config-core.mjs && node --check src/gx-converter.js && node --check src/gx-converter-core.mjs && node --check src/site-auth.js && node --check src/site-login.js && node --check src/site-shell.js && node --check test/server-auth.test.js && node --check test/site-auth.test.js && node --input-type=module --check < src/slicer.js && node --check src/slicer-worker.js && node --check src/printer-database.mjs && node --check src/cura-engine-adapter.mjs && node --check scripts/import-cura-printers.js && node --check scripts/import-flashforge-printers.js && node --check scripts/build-web.js && node --check scripts/publish-web.js && npm run typecheck",
     "test": "node --test"
   },
   "devDependencies": {

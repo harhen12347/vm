@@ -6,6 +6,7 @@ const { pathToFileURL } = require('node:url');
 const { constants: fsConstants } = require('node:fs');
 const { pipeline } = require('node:stream/promises');
 const { randomBytes, timingSafeEqual } = require('node:crypto');
+const { createSiteAuth } = require('./src/site-auth');
 const WebSocket = require('ws');
 const { WebSocketServer } = require('ws');
 const { VirtualFileSystem } = require('./src/vfs');
@@ -14,12 +15,22 @@ const { UbuntuVmManager, VM_VNC_WEBSOCKET_PORT } = require('./src/vm-manager');
 
 const port = Number(process.env.PORT || 3001);
 const host = process.env.HOST || '127.0.0.1';
-const files = new VirtualFileSystem(path.join(os.homedir(), '.aether-desktop', 'aether-files.json'));
-const vmManager = new UbuntuVmManager({ userDataPath: path.join(os.homedir(), '.aether-desktop') });
+const siteAuth = createSiteAuth(process.env.SITE_PASSWORD, {
+  secureCookie: process.env.NODE_ENV === 'production'
+});
+const dataPath = process.env.AETHER_DATA_DIR || path.join(os.homedir(), '.aether-desktop');
+const files = new VirtualFileSystem(path.join(dataPath, 'aether-files.json'));
+const vmManager = new UbuntuVmManager({ userDataPath: dataPath });
 const MAX_VM_UPLOAD_BYTES = 128 * 1024 * 1024;
 const vmAccessToken = randomBytes(32).toString('hex');
 const staticFiles = new Map([
   ['/', path.join(__dirname, 'src', 'launcher.html')],
+  ['/login', path.join(__dirname, 'src', 'site-login.html')],
+  ['/login.html', path.join(__dirname, 'src', 'site-login.html')],
+  ['/site-login.css', path.join(__dirname, 'src', 'site-login.css')],
+  ['/site-login.js', path.join(__dirname, 'src', 'site-login.js')],
+  ['/site-shell.css', path.join(__dirname, 'src', 'site-shell.css')],
+  ['/site-shell.js', path.join(__dirname, 'src', 'site-shell.js')],
   ['/launcher.css', path.join(__dirname, 'src', 'launcher.css')],
   ['/slicer', path.join(__dirname, 'src', 'slicer.html')],
   ['/slicer.html', path.join(__dirname, 'src', 'slicer.html')],
@@ -36,6 +47,11 @@ const staticFiles = new Map([
   ['/printer-config.css', path.join(__dirname, 'src', 'printer-config.css')],
   ['/printer-config.js', path.join(__dirname, 'src', 'printer-config.js')],
   ['/printer-config-core.mjs', path.join(__dirname, 'src', 'printer-config-core.mjs')],
+  ['/gx-converter', path.join(__dirname, 'src', 'gx-converter.html')],
+  ['/gx-converter.html', path.join(__dirname, 'src', 'gx-converter.html')],
+  ['/gx-converter.css', path.join(__dirname, 'src', 'gx-converter.css')],
+  ['/gx-converter.js', path.join(__dirname, 'src', 'gx-converter.js')],
+  ['/gx-converter-core.mjs', path.join(__dirname, 'src', 'gx-converter-core.mjs')],
   ['/vendor/three/three.module.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.js')],
   ['/vendor/three/three.core.js', path.join(__dirname, 'node_modules', 'three', 'build', 'three.core.js')],
   ['/vendor/cura-wasm/es.js', path.join(__dirname, 'node_modules', '@toybox-labs', 'cura-wasm', 'dist', 'es.js')],
@@ -149,6 +165,30 @@ async function listSharedFiles() {
 }
 
 async function handleApi(request, response, pathname) {
+  if (pathname === '/api/auth/login') {
+    if (request.method !== 'POST') return respondJson(response, 405, { error: 'Method not allowed.' });
+    const body = await readJson(request);
+    const forwarded = process.env.TRUST_PROXY === 'true' ? request.headers['x-forwarded-for']?.split(',')[0]?.trim() : '';
+    const clientId = forwarded || request.socket.remoteAddress || 'unknown';
+    const result = siteAuth.authenticate(body.password, clientId);
+    if (result.limited) {
+      response.setHeader('Retry-After', String(result.retryAfter));
+      return respondJson(response, 429, { error: 'Too many unsuccessful attempts. Please wait before trying again.' });
+    }
+    if (!result.ok) return respondJson(response, 401, { error: 'Incorrect password. Please try again.' });
+    response.setHeader('Set-Cookie', siteAuth.cookie(result.token));
+    return respondJson(response, 200, { ok: true });
+  }
+  if (pathname === '/api/auth/logout') {
+    if (request.method !== 'POST') return respondJson(response, 405, { error: 'Method not allowed.' });
+    siteAuth.revoke(request);
+    response.setHeader('Set-Cookie', siteAuth.clearCookie());
+    return respondJson(response, 200, { ok: true });
+  }
+  if (pathname === '/api/auth/session') {
+    if (request.method !== 'GET') return respondJson(response, 405, { error: 'Method not allowed.' });
+    return respondJson(response, 200, { authenticated: siteAuth.hasSession(request) });
+  }
   if (pathname === '/api/cad/sldprt-to-stl') {
     if (request.method !== 'POST') return respondJson(response, 405, { error: 'Method not allowed.' });
     if ((request.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase() !== 'application/octet-stream') {
@@ -261,12 +301,32 @@ async function handleApi(request, response, pathname) {
 const server = http.createServer(async (request, response) => {
   try {
     const requestUrl = new URL(request.url, 'http://localhost');
-    if (requestUrl.pathname.startsWith('/api/')) {
-      await handleApi(request, response, requestUrl.pathname);
+    const pathname = requestUrl.pathname;
+    const publicPath = pathname === '/login' || pathname === '/login.html'
+      || pathname === '/site-login.css' || pathname === '/site-login.js';
+    const publicApi = pathname === '/api/auth/login' || pathname === '/api/auth/session'
+      || pathname === '/api/health';
+
+    if (pathname.startsWith('/api/') && !publicApi && !siteAuth.hasSession(request)) {
+      respondJson(response, 401, { error: 'Authentication required.' });
+      return;
+    }
+    if (!pathname.startsWith('/api/') && !publicPath && !siteAuth.hasSession(request)) {
+      response.writeHead(303, { Location: `/login?next=${encodeURIComponent(pathname + requestUrl.search)}`, 'Cache-Control': 'no-store' });
+      response.end();
+      return;
+    }
+    if (pathname.startsWith('/api/')) {
+      await handleApi(request, response, pathname);
+      return;
+    }
+    if (publicPath && siteAuth.hasSession(request) && (pathname === '/login' || pathname === '/login.html')) {
+      response.writeHead(303, { Location: '/', 'Cache-Control': 'no-store' });
+      response.end();
       return;
     }
 
-    let filePath = staticFiles.get(requestUrl.pathname);
+    let filePath = staticFiles.get(pathname);
     const addonPrefix='/vendor/three/addons/';
     if(!filePath&&requestUrl.pathname.startsWith(addonPrefix)){
       const addonRoot=path.resolve(__dirname,'node_modules','three','examples','jsm');
@@ -279,15 +339,19 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     const content = await fs.readFile(filePath);
+    const isLoginPage = pathname === '/login' || pathname === '/login.html';
+    const pageContent = path.extname(filePath) === '.html' && !isLoginPage
+      ? Buffer.from(content.toString('utf8').replace('</body>', '<script src="/site-shell.js" defer></script></body>'))
+      : content;
     const isSlicerRoute = requestUrl.pathname.startsWith('/slicer');
     const scriptPolicy = isSlicerRoute ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'";
     response.writeHead(200, {
       'Content-Type': mimeTypes[path.extname(filePath)] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': isLoginPage ? 'no-store' : 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': `default-src 'self' https:; ${scriptPolicy}; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src https: http:; object-src 'none'; base-uri 'self';`
     });
-    response.end(content);
+    response.end(pageContent);
   } catch (error) {
     if (response.headersSent) {
       response.destroy(error);
@@ -311,7 +375,7 @@ server.on('upgrade', (request, socket, head) => {
     return;
   }
   const suppliedToken = requestUrl.searchParams.get('token') || '';
-  if (requestUrl.pathname !== '/vm-ws'
+  if (requestUrl.pathname !== '/vm-ws' || !siteAuth.hasSession(request)
       || Buffer.byteLength(suppliedToken) !== Buffer.byteLength(vmAccessToken)
       || !timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(vmAccessToken))) {
     socket.destroy();
@@ -358,7 +422,7 @@ consoleServer.on('connection', (client) => {
 
 server.listen(port, host, () => {
   console.log(`Aether Browser VM API listening at http://${host}:${port}`);
-  console.log(`Persistent virtual files: ${pathToFileURL(path.join(os.homedir(), '.aether-desktop', 'aether-files.json')).pathname}`);
+  console.log(`Persistent virtual files: ${pathToFileURL(path.join(dataPath, 'aether-files.json')).pathname}`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {

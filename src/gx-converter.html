@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#11151d">
+  <title>GX File Converter</title>
+  <link rel="stylesheet" href="./gx-converter.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}</script>
+</head>
+<body>
+  <main class="converter-shell">
+	<header class="topbar">
+	  <a class="brand" href="./" aria-label="Aether tools"><span>A</span><b>AETHER</b></a>
+	  <div class="tool-name">GX FILE CONVERTER <small>Tool 05</small></div>
+	  <a class="back-link" href="./">← All tools</a>
+	</header>
+
+	<section class="workspace">
+	  <div class="heading">
+		<p class="eyebrow">FLASHFORGE GX WORKSPACE</p>
+		<h1>Separate a print file into usable outputs</h1>
+		<p>Extract embedded G-code settings and reconstruct the extrusion toolpaths locally in your browser.</p>
+	  </div>
+
+	  <section id="upload-panel" class="upload-panel">
+		<label id="dropzone" class="dropzone" for="gx-file">
+		  <input id="gx-file" type="file" accept=".gx,.zip,.gz,application/octet-stream">
+		  <span class="upload-icon">↧</span>
+		  <b>Drop a .gx file here</b>
+		  <small>or click to browse your computer</small>
+		  <span id="file-meta" class="file-meta"></span>
+		</label>
+		<div class="upload-actions">
+		  <button id="convert-button" class="primary" disabled>Convert file</button>
+		  <button id="reset-button" class="secondary" disabled>Reset</button>
+		</div>
+	  </section>
+
+	  <section id="progress-panel" class="progress-panel" hidden>
+		<div class="progress-copy"><b id="progress-title">Reading file</b><span id="progress-value">0%</span></div>
+		<div class="progress-track"><span id="progress-bar"></span></div>
+	  </section>
+
+	  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+	  <section id="results" class="results" hidden>
+		<article class="result-card">
+		  <header><span class="card-mark">P</span><div><p>PRINTER CONFIGURATION</p><h2>Machine settings</h2></div></header>
+		  <div id="printer-settings" class="settings-list"></div>
+		  <footer><a id="printer-download" class="download-button">Download printer settings</a></footer>
+		</article>
+
+		<article class="result-card">
+		  <header><span class="card-mark">M</span><div><p>MODEL CONFIGURATION</p><h2>Slicing settings</h2></div></header>
+		  <div id="model-settings" class="settings-list"></div>
+		  <footer><a id="model-download" class="download-button">Download JSON metadata</a></footer>
+		</article>
+
+		<article class="result-card model-card">
+		  <header><span class="card-mark">3</span><div><p>3D MODEL</p><h2>Toolpath reconstruction</h2></div></header>
+		  <div id="model-preview" class="model-preview"><div class="preview-grid"></div></div>
+		  <div id="model-dimensions" class="dimensions"></div>
+		  <footer><a id="stl-download" class="download-button">Download .stl</a></footer>
+		</article>
+	  </section>
+
+	  <details class="format-note">
+		<summary>Format and compatibility</summary>
+		<p>GX is normally a FlashForge binary wrapper containing G-code and an embedded thumbnail—not an original CAD/STL archive. This tool extracts only metadata present in that payload and creates an STL from extruding movements. The STL is a physical-toolpath approximation, not recovered source geometry. Native FlashPrint FCFG generation is unsupported. The separate JSON metadata download is not an FCFG file and must not be renamed as one.</p>
+	  </details>
+	</section>
+  </main>
+  <script type="module" src="./gx-converter.js"></script>
+</body>
+</html>
