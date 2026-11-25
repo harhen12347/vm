@@ -61,10 +61,12 @@ backend or server-side login; use the protected Node server for the full VM and 
 The slicer imports STL, OBJ, PLY, AMF, 3MF, DAE, GLTF, and GLB meshes; GLTF
 files must embed their buffers and images. Models can be selected from the object list or viewport,
 moved numerically, rotated on each axis (with 90-degree shortcuts), and resized in millimetres with
-optional proportional scaling. Transform controls are available as a viewport dock on narrow screens.
-Slicing runs through CuraEngine WebAssembly and produces real G-code, layer previews, supports, and print
-metadata. Printer output is gated on the selected profile's firmware flavor, extrusion mode, origin,
-build plate, dimensions, and required commands. Verify generated G-code for the exact physical printer
+optional proportional scaling. The selected model's dimension readout stays synchronized, and footprint-aware
+auto-arrangement spaces models and centers the layout on the plate. Transform controls are available as a
+viewport dock on narrow screens. Slicing runs through CuraEngine WebAssembly and produces real G-code, layer
+previews, supports, and print metadata. Printer output is gated on the selected profile's firmware flavor,
+extrusion mode, origin, build plate, dimensions, and required commands. Verify generated G-code for the exact
+physical printer
 before use. The native editable project format is `.prism`; version 1 projects are migrated when opened,
 and 3MF currently imports as mesh data.
 

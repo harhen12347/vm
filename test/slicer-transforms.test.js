@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { dimensionsFromScale, normalizePositionsAtPlate, scaleForDimensions } = require('../src/slicer-transforms.mjs');
+const { arrangeFootprints, dimensionsFromScale, normalizePositionsAtPlate, scaleForDimensions } = require('../src/slicer-transforms.mjs');
 
 test('reports resized model dimensions from its base geometry and scale', () => {
   assert.deepEqual(dimensionsFromScale([20, 10, 5], [2, 2, 2]), [40, 20, 10]);
@@ -9,6 +9,17 @@ test('reports resized model dimensions from its base geometry and scale', () => 
 test('centers imported vertices on the plate and keeps their original dimensions', () => {
   const normalized=normalizePositionsAtPlate([[10,20,5],[14,20,5],[10,26,9]]);
   assert.deepEqual(normalized, [[-2,-3,0],[2,-3,0],[-2,3,4]]);
+});
+
+test('arranges model footprints with spacing inside the build volume', () => {
+  const placed=arrangeFootprints([{width:20,depth:10},{width:30,depth:10}],{x:100,y:80},5);
+  assert.deepEqual(placed, [[-17.5,0],[12.5,0]]);
+  assert.deepEqual(arrangeFootprints([{width:20,depth:10}],{x:100,y:80}), [[0,0]]);
+});
+
+test('rejects models which cannot be arranged on the build plate', () => {
+  assert.throws(()=>arrangeFootprints([{width:101,depth:10}],{x:100,y:80}),/larger than the build plate/);
+  assert.throws(()=>arrangeFootprints([{width:40,depth:40},{width:40,depth:40},{width:40,depth:40}],{x:100,y:80}),/do not fit/);
 });
 
 test('resizes proportionally from the edited axis', () => {

@@ -8,7 +8,8 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
-import { dimensionsFromScale, normalizePositionsAtPlate, scaleForDimensions } from './slicer-transforms.mjs';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { arrangeFootprints, dimensionsFromScale, normalizePositionsAtPlate, scaleForDimensions } from './slicer-transforms.mjs';
 
 const printerDatabaseResponse = await fetch('./printer-database.json', { cache: 'no-cache' });
 if (!printerDatabaseResponse.ok) throw new Error(`Unable to load printer database (${printerDatabaseResponse.status}).`);
@@ -25,6 +26,18 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 viewport.prepend(renderer.domElement);
+const transformControls=new TransformControls(camera,renderer.domElement);
+transformControls.setMode('translate');
+transformControls.setSize(0.85);
+scene.add(transformControls.getHelper());
+transformControls.addEventListener('dragging-changed',(event)=>{
+  if(event.value)pointerAction=null;
+});
+transformControls.addEventListener('objectChange',()=>syncTransformInputs());
+transformControls.addEventListener('mouseUp',()=>{
+  if(selectedObject&&transformControls.getMode()!=='translate')placeOnPlate(selectedObject);
+  invalidateSlice();
+});
 
 const printerProfiles = printerDatabase.profiles.map((profile) => ({
   ...profile,
@@ -187,7 +200,7 @@ renderer.domElement.addEventListener('pointerdown', (event) => {
 });
 renderer.domElement.addEventListener('contextmenu',(event)=>event.preventDefault());
 renderer.domElement.addEventListener('pointermove', (event) => {
-  if (!pointerAction) return;
+  if (!pointerAction || transformControls.dragging) return;
   const dx = event.clientX - pointerAction.x;
   const dy = event.clientY - pointerAction.y;
   if (pointerAction.type === 'orbit') {
@@ -293,6 +306,9 @@ function setObjectList() {
   const list = $('#object-list');
   list.replaceChildren();
   if (!objects.length) {
+    transformControls.detach();
+    $('#selected-model-name').textContent='No model selected';
+    $('#model-dimensions').textContent='Size: -- × -- × -- mm';
     list.innerHTML = '<div class="empty-object">Drop STL or OBJ files here</div>';
     return;
   }
@@ -317,6 +333,9 @@ function selectObject(item) {
   $('#rotate-z').value=THREE.MathUtils.radToDeg(item.mesh.rotation.z).toFixed(1);
   const dimensions=dimensionsFromScale(item.baseSize,item.mesh.scale.toArray());
   ['size-x','size-y','size-z'].forEach((id,axis)=>$('#'+id).value=dimensions[axis].toFixed(1));
+  $('#selected-model-name').textContent=item.name;
+  $('#model-dimensions').textContent=`Size: ${dimensions.map((value)=>value.toFixed(1)).join(' × ')} mm`;
+  transformControls.attach(item.mesh);
   setObjectList();
 }
 
@@ -358,7 +377,10 @@ async function importFiles(fileList) {
     }
   }
   setObjectList();
-  if(imported)invalidateSlice();
+  if(imported){
+    try{arrangeObjects();}catch(error){showStatus(error.message,true);}
+    invalidateSlice();
+  }
 }
 
 async function loadMeshObject(filename,buffer) {
@@ -404,12 +426,22 @@ function positionsFromObject(root) {
 function placeOnPlate(item) {
   item.mesh.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(item.mesh);
-  item.mesh.position.z -= bounds.min.z;
-  $('#pos-z').value = item.mesh.position.z.toFixed(1);
-  if (objects.length === 1) return;
-  const index = objects.indexOf(item);
-  item.mesh.position.x = ((index % 3) - 1) * 55;
-  item.mesh.position.y = (Math.floor(index / 3) - 1) * 55;
+  item.mesh.position.z-=bounds.min.z;
+  if(item===selectedObject)syncTransformInputs();
+}
+
+function arrangeObjects(){
+  scene.updateMatrixWorld(true);
+  const footprints=objects.map((item)=>{
+    const bounds=new THREE.Box3().setFromObject(item.mesh);
+    return {name:item.name,width:bounds.max.x-bounds.min.x,depth:bounds.max.y-bounds.min.y};
+  });
+  const placements=arrangeFootprints(footprints,{x:printerProfile.x,y:printerProfile.y});
+  objects.forEach((item,index)=>{
+    item.mesh.position.x=placements[index][0];
+    item.mesh.position.y=placements[index][1];
+    placeOnPlate(item);
+  });
   syncTransformInputs();
 }
 
@@ -420,6 +452,7 @@ function syncTransformInputs() {
   $('#pos-z').value=selectedObject.mesh.position.z.toFixed(1);
   const dimensions=dimensionsFromScale(selectedObject.baseSize,selectedObject.mesh.scale.toArray());
   ['size-x','size-y','size-z'].forEach((id,axis)=>$('#'+id).value=dimensions[axis].toFixed(1));
+  $('#model-dimensions').textContent=`Size: ${dimensions.map((value)=>value.toFixed(1)).join(' × ')} mm`;
   ['rotate-x','rotate-y','rotate-z'].forEach((id,axis)=>$('#'+id).value=THREE.MathUtils.radToDeg(selectedObject.mesh.rotation[['x','y','z'][axis]]).toFixed(1));
 }
 
@@ -515,9 +548,8 @@ function addSettingEvents() {
     invalidateSlice();
   });
   $('#arrange-object').addEventListener('click', () => {
-    objects.forEach((item,index)=>{item.mesh.position.x=((index%4)-1.5)*45;item.mesh.position.y=(Math.floor(index/4)-1)*45;});
-    syncTransformInputs();
-    invalidateSlice();
+    try{arrangeObjects();invalidateSlice();showStatus('Models arranged on the build plate');}
+    catch(error){showStatus(error.message,true);}
   });
 }
 addSettingEvents();
@@ -525,6 +557,12 @@ $('#transform-toggle').addEventListener('click',()=>{
   const expanded=$('#transform-tools').classList.toggle('open');
   $('#transform-toggle').setAttribute('aria-expanded',String(expanded));
 });
+$$('[data-transform]').forEach((button)=>button.addEventListener('click',()=>{
+  transformControls.setMode(button.dataset.transform);
+  $$('[data-transform]').forEach((entry)=>entry.classList.toggle('active',entry===button));
+}));
+$('#fit-view').addEventListener('click',fitPrinterView);
+$('#arrange-mobile').addEventListener('click',()=>$('#arrange-object').click());
 
 for (const tab of $$('.tabs button')) tab.addEventListener('click', () => {
   $$('.tabs button').forEach((button) => button.classList.remove('active'));
@@ -543,6 +581,20 @@ for (const button of $$('[data-view]')) button.addEventListener('click', () => {
   else if (button.dataset.view === 'side') { camera.position.set(distance,0,cameraTarget.z+distance*0.16);camera.up.set(0,0,1); }
   else { camera.up.set(0,0,1);fitPrinterView();return; }
   camera.lookAt(cameraTarget);
+});
+
+document.addEventListener('keydown',(event)=>{
+  if(event.target instanceof HTMLElement&&event.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+  if(event.key==='Delete'||event.key==='Backspace'){
+    if(selectedObject){event.preventDefault();$('#delete-object').click();}
+  }else if(event.ctrlKey&&event.key.toLowerCase()==='d'){
+    if(selectedObject){event.preventDefault();$('#duplicate-object').click();}
+  }else if(event.key.toLowerCase()==='f'){
+    event.preventDefault();fitPrinterView();
+  }else if(['1','2','3'].includes(event.key)){
+    const mode={1:'translate',2:'rotate',3:'scale'}[event.key];
+    $(`[data-transform="${mode}"]`).click();
+  }
 });
 
 for(const button of $$('[data-menu]')){

@@ -48,8 +48,16 @@
         <button data-view="front" title="Front view">Front</button>
         <button data-view="side" title="Side view">Side</button>
       </div>
+      <div class="gizmo-toolbar" role="group" aria-label="3D transform mode">
+        <button data-transform="translate" class="active" title="Move selected model">Move</button>
+        <button data-transform="rotate" title="Rotate selected model">Rotate</button>
+        <button data-transform="scale" title="Scale selected model">Scale</button>
+      </div>
+      <button id="fit-view" class="fit-view" title="Fit build plate in view">Fit</button>
       <button id="transform-toggle" class="transform-toggle" aria-expanded="true" aria-controls="transform-tools">Transform</button>
       <div id="transform-tools" class="transform-tools">
+        <div id="selected-model-name" class="selected-model-name">No model selected</div>
+        <div id="model-dimensions" class="model-dimensions">Size: -- × -- × -- mm</div>
         <div class="section-title">Move (mm)</div>
         <div class="transform-grid">
           <label>X <input id="pos-x" type="number" value="0" step="1"></label>
@@ -77,6 +85,7 @@
         <div class="transform-actions">
           <button id="center-object">Center</button><button id="plate-object">Place on plate</button>
           <button id="reset-rotation">Reset rotation</button><button id="reset-size">Reset size</button>
+          <button id="arrange-mobile">Arrange all</button>
         </div>
       </div>
       <div class="axis-widget" aria-hidden="true"><i class="axis-x"></i><i class="axis-y"></i><i class="axis-z"></i></div>

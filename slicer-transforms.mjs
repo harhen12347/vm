@@ -21,6 +21,32 @@ export function normalizePositionsAtPlate(positions) {
   return positions.map((point)=>point.map((value,axis)=>value-offset[axis]));
 }
 
+export function arrangeFootprints(footprints, buildVolume, gap = 4) {
+  if (!Array.isArray(footprints) || !footprints.length ||
+      footprints.some(({ width, depth }) => !Number.isFinite(width) || !Number.isFinite(depth) || width <= 0 || depth <= 0) ||
+      !buildVolume || !Number.isFinite(buildVolume.x) || !Number.isFinite(buildVolume.y) || buildVolume.x <= 0 || buildVolume.y <= 0 ||
+      !Number.isFinite(gap) || gap < 0) {
+    throw new Error('Model footprints and build-plate dimensions must be positive finite values.');
+  }
+  const placements=[];
+  let x=-buildVolume.x/2+gap, y=-buildVolume.y/2+gap, rowDepth=0;
+  for(const footprint of footprints){
+    const width=footprint.width+gap, depth=footprint.depth+gap;
+    if(width>buildVolume.x||depth>buildVolume.y)throw new Error(`${footprint.name||'A model'} is larger than the build plate.`);
+    if(x+width>buildVolume.x/2){x=-buildVolume.x/2+gap;y+=rowDepth;rowDepth=0;}
+    if(y+depth>buildVolume.y/2)throw new Error('All models do not fit on the build plate. Remove models or resize them before arranging.');
+    placements.push([x+footprint.width/2,y+footprint.depth/2]);
+    x+=width;
+    rowDepth=Math.max(rowDepth,depth);
+  }
+  const minX=Math.min(...placements.map(([px],index)=>px-footprints[index].width/2));
+  const maxX=Math.max(...placements.map(([px],index)=>px+footprints[index].width/2));
+  const minY=Math.min(...placements.map(([,py],index)=>py-footprints[index].depth/2));
+  const maxY=Math.max(...placements.map(([,py],index)=>py+footprints[index].depth/2));
+  const offsetX=-(minX+maxX)/2,offsetY=-(minY+maxY)/2;
+  return placements.map(([px,py])=>[px+offsetX,py+offsetY]);
+}
+
 export function scaleForDimensions(baseDimensions, targetDimensions, keepProportions, changedAxis) {
   if (!Array.isArray(baseDimensions) || baseDimensions.length !== 3 ||
 	  !Array.isArray(targetDimensions) || targetDimensions.length !== 3 ||
